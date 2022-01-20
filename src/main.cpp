@@ -1,17 +1,19 @@
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <fstream>
 #include <functional>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <vector>
 
 namespace lex_detail {
 #include "lex_defs.h"
+}
 
+namespace lex_detail {
 #include "lex_analyzer.inl"
-}  // namespace lex_detail
+}
 
 class Parser {
  public:
@@ -53,24 +55,27 @@ class Parser {
             }
             return level;
         }
-        std::string_view getTrimmedText() const { return std::string_view(text).substr(ws_count); }
-        bool hasNewLine() const { return std::string_view(text).substr(0, ws_count).find('\n') != std::string::npos; }
+        std::string_view getTrimmedText() const { return text.substr(ws_count); }
+        bool hasNewLine() const { return text.substr(0, ws_count).find('\n') != std::string::npos; }
         std::string makeIndented(std::string_view text) const {
             std::string result = '\n' + std::string(std::max<size_t>(1, pos) - 1, ' ');
             return result += text;
         }
     };
 
-    Parser(char* text, size_t length) : lex_state_stack_({lex_detail::sc_initial}) {
-        lex_ctx_.out_first = lex_ctx_.out_last = lex_ctx_.in_next = text;
-        lex_ctx_.in_boundary = text + length;
+    Parser(const char* text, size_t length) {
+        first_ = text, last_ = text + length;
+        revert_stack_.reserve(16);
+        lex_state_stack_.reserve(256);
+        lex_state_stack_.push_back(lex_detail::sc_initial);
     }
     void parseNext(Token& token);
     void revert(Token token) { revert_stack_.emplace_back(token); }
 
  private:
     unsigned line_ = 1, pos_ = 1;
-    lex_detail::CtxData lex_ctx_;
+    const char* first_ = nullptr;
+    const char* last_ = nullptr;
     std::vector<int> lex_state_stack_;
     std::vector<Token> revert_stack_;
 
@@ -93,46 +98,47 @@ void Parser::parseNext(Token& token) {
     token.ws_count = 0;
     token.line = line_, token.pos = pos_;
 
-    char* token_start = lex_ctx_.out_last;
+    const char* token_start = first_;
 
     while (true) {
-        lex_ctx_.out_first = lex_ctx_.out_last;
-        int pat_no = lex_detail::lex(lex_ctx_, lex_state_stack_);
-        size_t lexeme_len = static_cast<size_t>(lex_ctx_.out_last - lex_ctx_.out_first);
-        trackPosition(std::string_view(lex_ctx_.out_first, lexeme_len));
-        switch (pat_no) {
-            case lex_detail::pat_comment: token.type = TokenType::kComment; break;
-            case lex_detail::pat_string: token.type = TokenType::kString; break;
-            case lex_detail::pat_id: token.type = TokenType::kIdentifier; break;
-            case lex_detail::pat_int: token.type = TokenType::kInteger; break;
-            case lex_detail::pat_real: token.type = TokenType::kReal; break;
-            case lex_detail::pat_preproc_body: {
-                token.type = TokenType::kPreprocBody;
-                lex_state_stack_.pop_back();
-            } break;
-            case lex_detail::pat_preproc: {
-                token.type = TokenType::kPreprocDef;
-                lex_state_stack_.push_back(lex_detail::sc_preproc);
-            } break;
-            case lex_detail::pat_ws: {
-                token.ws_count += lexeme_len;
-                token.line = line_, token.pos = pos_;
-            }; break;
-            case lex_detail::pat_eof: {
-                token.type = TokenType::kEof;
-                --lex_ctx_.out_last;  // Trim last '\0'
-            } break;
-            default: break;
+        unsigned llen = 0;
+        const char* lexeme = first_;
+        int pat_no = lex_detail::lex(lexeme, last_, lex_state_stack_, llen, false);
+        first_ += llen;
+        if (pat_no != lex_detail::err_end_of_input) {
+            trackPosition(std::string_view(lexeme, llen));
+            switch (pat_no) {
+                case lex_detail::pat_comment: token.type = TokenType::kComment; break;
+                case lex_detail::pat_string: token.type = TokenType::kString; break;
+                case lex_detail::pat_id: token.type = TokenType::kIdentifier; break;
+                case lex_detail::pat_int: token.type = TokenType::kInteger; break;
+                case lex_detail::pat_real: token.type = TokenType::kReal; break;
+                case lex_detail::pat_preproc_body: {
+                    token.type = TokenType::kPreprocBody;
+                    lex_state_stack_.pop_back();
+                } break;
+                case lex_detail::pat_preproc: {
+                    token.type = TokenType::kPreprocDef;
+                    lex_state_stack_.push_back(lex_detail::sc_preproc);
+                } break;
+                case lex_detail::pat_ws: {
+                    token.ws_count += llen;
+                    token.line = line_, token.pos = pos_;
+                }; break;
+                default: break;
+            }
+        } else {
+            token.type = TokenType::kEof;
         }
 
         if (pat_no != lex_detail::pat_ws) {
-            token.text = std::string_view(token_start, lex_ctx_.out_last - token_start);
+            token.text = std::string_view(token_start, first_ - token_start);
             break;
         }
     }
 }
 
-void fixSingleStatement(Parser& parser, std::ostream& output, const Parser::Token& first_tkn) {
+void fixSingleStatement(Parser& parser, std::string& output, const Parser::Token& first_tkn) {
     Parser::Token token;
     bool is_else_block = false;
 
@@ -141,7 +147,7 @@ void fixSingleStatement(Parser& parser, std::ostream& output, const Parser::Toke
         if (!is_else_block && !first_tkn.isIdentifier("do")) {
             int level = -1;
             while (!token.isEof()) {
-                output << token.text;
+                output.append(token.text);
                 if (level >= 0) {
                     level = token.trackLevel(level, '(', ')');
                 } else if (token.isSymbol('(')) {
@@ -153,13 +159,14 @@ void fixSingleStatement(Parser& parser, std::ostream& output, const Parser::Toke
         }
 
         std::vector<Parser::Token> comments;
+        comments.reserve(16);
         while (token.isComment()) {
             comments.emplace_back(token);
             parser.parseNext(token);
         }
 
-        if (!token.isEof()) { output << " {"; }
-        for (const auto& comment : comments) { output << comment.text; }
+        if (!token.isEof()) { output.append(" {"); }
+        for (const auto& comment : comments) { output.append(comment.text); }
         comments.clear();
         if (token.isEof()) { return; }
 
@@ -167,11 +174,11 @@ void fixSingleStatement(Parser& parser, std::ostream& output, const Parser::Toke
         if (!token.isSymbol('{')) {
             bool make_nl = token.hasNewLine(), has_comments = false;
             if (token.isAnyOfIdentifiers(key_words)) {
-                output << token.text;
+                output.append(token.text);
                 fixSingleStatement(parser, output, token);
             } else {
                 for (int level = 0; !token.isEof();) {
-                    output << token.text;
+                    output.append(token.text);
                     if (level == 0 && token.isSymbol(';')) { break; }
                     level = token.trackLevel(level, '{', '}');
                     parser.parseNext(token);
@@ -181,15 +188,15 @@ void fixSingleStatement(Parser& parser, std::ostream& output, const Parser::Toke
             parser.parseNext(token);
             while (token.isComment() && !token.hasNewLine()) {
                 has_comments = true;
-                output << token.text;
+                output.append(token.text);
                 parser.parseNext(token);
             }
 
-            output << (make_nl || has_comments ? first_tkn.makeIndented("}") : " }");
+            output.append(make_nl || has_comments ? first_tkn.makeIndented("}") : " }");
         } else {
             parser.parseNext(token);
             for (int level = 1; !token.isEof();) {
-                output << token.text;
+                output.append(token.text);
                 if (token.isAnyOfIdentifiers(key_words)) { fixSingleStatement(parser, output, token); }
                 parser.parseNext(token);
                 if (level == 0) { break; }
@@ -200,17 +207,17 @@ void fixSingleStatement(Parser& parser, std::ostream& output, const Parser::Toke
         bool has_comments = false;
         while (token.isComment()) {
             has_comments = true;
-            output << token.text;
+            output.append(token.text);
             parser.parseNext(token);
         }
 
         if (first_tkn.isIdentifier("do")) {
             if (token.isIdentifier("while")) {
-                output << (has_comments ? first_tkn.makeIndented("while") : " while");
+                output.append(has_comments ? first_tkn.makeIndented("while") : " while");
                 parser.parseNext(token);
             }
             for (int level = 0; !token.isEof();) {
-                output << token.text;
+                output.append(token.text);
                 if (level == 0 && token.isSymbol(';')) { break; }
                 level = token.trackLevel(level, '(', ')');
                 parser.parseNext(token);
@@ -218,15 +225,15 @@ void fixSingleStatement(Parser& parser, std::ostream& output, const Parser::Toke
             break;
         } else if (!is_else_block && first_tkn.isIdentifier("if")) {
             if (token.isIdentifier("else")) {
-                output << (has_comments ? first_tkn.makeIndented("else") : " else");
+                output.append(has_comments ? first_tkn.makeIndented("else") : " else");
                 parser.parseNext(token);
                 while (token.isComment()) {
                     comments.emplace_back(token);
                     parser.parseNext(token);
                 }
                 if (token.isIdentifier("if")) {
-                    for (const auto& comment : comments) { output << comment.text; }
-                    output << (!comments.empty() ? first_tkn.makeIndented("if") : " if");
+                    for (const auto& comment : comments) { output.append(comment.text); }
+                    output.append(!comments.empty() ? first_tkn.makeIndented("if") : " if");
                 } else {
                     parser.revert(token);
                     while (!comments.empty()) {
@@ -244,24 +251,22 @@ void fixSingleStatement(Parser& parser, std::ostream& output, const Parser::Toke
     } while (true);
 }
 
-std::string processText(char* text, size_t length,
-                        std::function<void(Parser&, std::ostream&, const Parser::Token&)> proc_func) {
-    std::ostringstream output;
+using TextProcessFunc = std::function<void(Parser&, std::string&, const Parser::Token&)>;
+std::string processText(const char* text, size_t length, const TextProcessFunc& proc_func) {
+    std::string output;
     Parser parser(text, length);
     Parser::Token token;
 
+    output.reserve(length + length / 10);
     do {
         parser.parseNext(token);
         if (token.type == Parser::TokenType::kPreprocBody) {
-            std::string text;
-            text.insert(text.end(), token.text.begin(), token.text.end());
-            text.push_back('\0');
-            output << processText(text.data(), text.size(), proc_func);
+            output.append(processText(token.text.data(), token.text.size(), proc_func));
         } else {
             proc_func(parser, output, token);
         }
     } while (!token.isEof());
-    return output.str();
+    return output;
 }
 
 int main(int argc, char** argv) {
@@ -269,14 +274,32 @@ int main(int argc, char** argv) {
     bool fix_file_endings = false;
     bool fix_single_statement = false;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "-o") {
-            if (i + 1 < argc) { output_file_name = argv[++i]; }
-        } else if (std::string(argv[i]) == "--fix-file-endings") {
+        std::string_view arg(argv[i]);
+        if (arg == "-o") {
+            if (++i < argc) { output_file_name = argv[i]; }
+        } else if (arg == "--fix-file-endings") {
             fix_file_endings = true;
-        } else if (std::string(argv[i]) == "--fix-single-statement") {
+        } else if (arg == "--fix-single-statement") {
             fix_single_statement = true;
+        } else if (arg == "--help") {
+            // clang-format off
+            static const char* text[] = {
+                "Usage: code-format [options] file",
+                "Options:",
+                "    -o <file>               Output file name.",
+                "    --fix-file-endings      Change file ending to one new-line symbol.",
+                "    --fix-single-statement  Enclose single-statement blocks in brackets, ",
+                "                            format `if`-`else if`-`else`-squences.",
+                "    --help                  Display this information.",
+            };
+            // clang-format on
+            for (const char* l : text) { std::cout << l << std::endl; }
+            return 0;
+        } else if (arg[0] != '-') {
+            input_file_name = arg;
         } else {
-            input_file_name = argv[i];
+            std::cerr << "code-format: fatal error: unknown flag `" << arg << "`" << std::endl;
+            return -1;
         }
     }
 
@@ -285,35 +308,34 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    std::string full_text;
+    std::string src_full_text;
     if (std::ifstream ifile(input_file_name); ifile) {
         size_t file_sz = static_cast<size_t>(ifile.seekg(0, std::ios_base::end).tellg());
-        full_text.resize(file_sz);
+        src_full_text.resize(file_sz);
         ifile.seekg(0);
-        ifile.read(full_text.data(), file_sz);
-        full_text.resize(ifile.gcount());
+        ifile.read(src_full_text.data(), file_sz);
+        src_full_text.resize(ifile.gcount());
     } else {
         std::cerr << "code-format: fatal error: could not open input file `" << input_file_name << "`";
         return -1;
     }
 
     std::cout << "Processing: " << input_file_name << "..." << std::endl;
-    std::string old_full_text(full_text);
 
 #if 0
-    auto proc_func = [](Parser& parser, std::ostream& output, const Parser::Token& token) {
+    auto proc_func = [](Parser& parser, std::string& output, const Parser::Token& token) {
         static const std::string type_names[] = {"kEof",  "kSymbol",     "kIdentifier",  "kString", "kInteger",
                                                  "kReal", "kPreprocDef", "kPreprocBody", "kComment"};
         std::cout << type_names[static_cast<unsigned>(token.type)] << ", ws_count = " << token.ws_count << ": \""
                   << token.getTrimmedText() << "\"" << std::endl;
-        output << token.text;
+        output.append(token.text);
     };
 #else
-    auto proc_func = [fix_single_statement, fix_file_endings](Parser& parser, std::ostream& output,
+    auto proc_func = [fix_single_statement, fix_file_endings](Parser& parser, std::string& output,
                                                               const Parser::Token& token) {
         static std::array<std::string_view, 5> key_words = {"if", "while", "for", "do"};
         if (!token.isEof() || !fix_file_endings) {
-            output << token.text;
+            output.append(token.text);
             if (fix_single_statement && token.isAnyOfIdentifiers(key_words)) {
                 fixSingleStatement(parser, output, token);
             }
@@ -321,10 +343,9 @@ int main(int argc, char** argv) {
     };
 #endif
 
-    full_text.push_back('\0');
-    full_text = processText(full_text.data(), full_text.size(), proc_func);
+    std::string full_text = processText(src_full_text.data(), src_full_text.size(), proc_func);
     if (fix_file_endings) { full_text.push_back('\n'); }
-    if (!output_file_name.empty() || full_text != old_full_text) {
+    if (!output_file_name.empty() || full_text != src_full_text) {
         if (output_file_name.empty()) { output_file_name = input_file_name; }
         if (std::ofstream ofile(output_file_name); ofile) {
             ofile.write(full_text.data(), full_text.size());

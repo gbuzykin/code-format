@@ -27,7 +27,6 @@ id          {id}
 int         {int}|{int_hex}
 real        {real}
 ws          {ws}+
-eof         <<EOF>>
 other       .
 
 %%
