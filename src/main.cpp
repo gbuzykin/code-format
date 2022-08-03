@@ -1,10 +1,11 @@
-#include <algorithm>
+#include "uxs/algorithm.h"
+#include "uxs/format.h"
+#include "uxs/io/filebuf.h"
+#include "uxs/stringcvt.h"
+
 #include <array>
 #include <cassert>
-#include <fstream>
 #include <functional>
-#include <iostream>
-#include <string>
 #include <vector>
 
 namespace lex_detail {
@@ -13,6 +14,13 @@ namespace lex_detail {
 
 namespace lex_detail {
 #include "lex_analyzer.inl"
+}
+
+template<typename... Args>
+void printError(std::string_view msg, Args&&... args) {
+    std::string full_msg("\033[1;37mcode-format: \033[0;31merror: \033[0m");
+    full_msg += msg;
+    uxs::fprintln(uxs::stdbuf::err, full_msg, std::forward<Args>(args)...);
 }
 
 class Parser {
@@ -42,8 +50,7 @@ class Parser {
         }
         template<typename Range>
         bool isAnyOfIdentifiers(Range&& r) const {
-            return type == TokenType::kIdentifier &&
-                   std::find(std::begin(r), std::end(r), getTrimmedText()) != std::end(r);
+            return type == TokenType::kIdentifier && uxs::find(r, getTrimmedText()).second;
         }
         int trackLevel(int level, char ch_open, char ch_close) const {
             if (type == TokenType::kSymbol) {
@@ -66,7 +73,7 @@ class Parser {
     Parser(const char* text, size_t length) {
         first_ = text, last_ = text + length;
         revert_stack_.reserve(16);
-        lex_state_stack_.reserve(256);
+        lex_state_stack_.reserve_at_curr(256);
         lex_state_stack_.push_back(lex_detail::sc_initial);
     }
     void parseNext(Token& token);
@@ -76,14 +83,14 @@ class Parser {
     unsigned line_ = 1, pos_ = 1;
     const char* first_ = nullptr;
     const char* last_ = nullptr;
-    std::vector<int> lex_state_stack_;
+    uxs::basic_inline_dynbuffer<int, 1> lex_state_stack_;
     std::vector<Token> revert_stack_;
 
     void trackPosition(std::string_view s) {
-        for (auto it = s.begin(); it != s.end(); ++it) {
-            if (*it == '\n') { ++line_, pos_ = 0; }
+        uxs::for_each(s, [this](char ch) {
+            if (ch == '\n') { ++line_, pos_ = 0; }
             ++pos_;
-        }
+        });
     }
 };
 
@@ -101,13 +108,26 @@ void Parser::parseNext(Token& token) {
     const char* token_start = first_;
 
     while (true) {
+        int pat = 0;
         unsigned llen = 0;
-        const char* lexeme = first_;
-        int pat_no = lex_detail::lex(lexeme, last_, lex_state_stack_, llen, false);
+        const char *first = first_, *lexeme = first;
+        while (true) {
+            bool stack_limitation = false;
+            const char* last = last_;
+            if (lex_state_stack_.avail() < static_cast<size_t>(last - first)) {
+                last = first + lex_state_stack_.avail();
+                stack_limitation = true;
+            }
+            pat = lex_detail::lex(first, last, lex_state_stack_.p_curr(), &llen, stack_limitation);
+            if (pat >= lex_detail::predef_pat_default || !stack_limitation) { break; }
+            // enlarge state stack and continue analysis
+            lex_state_stack_.reserve_at_curr(llen);
+            first = last;
+        }
         first_ += llen;
-        if (pat_no != lex_detail::err_end_of_input) {
+        if (pat >= lex_detail::predef_pat_default) {
             trackPosition(std::string_view(lexeme, llen));
-            switch (pat_no) {
+            switch (pat) {
                 case lex_detail::pat_comment: token.type = TokenType::kComment; break;
                 case lex_detail::pat_string: token.type = TokenType::kString; break;
                 case lex_detail::pat_id: token.type = TokenType::kIdentifier; break;
@@ -131,7 +151,7 @@ void Parser::parseNext(Token& token) {
             token.type = TokenType::kEof;
         }
 
-        if (pat_no != lex_detail::pat_ws) {
+        if (pat != lex_detail::pat_ws) {
             token.text = std::string_view(token_start, first_ - token_start);
             break;
         }
@@ -283,51 +303,50 @@ int main(int argc, char** argv) {
             fix_single_statement = true;
         } else if (arg == "--help") {
             // clang-format off
-            static const char* text[] = {
+            static constexpr std::string_view text[] = {
                 "Usage: code-format [options] file",
                 "Options:",
                 "    -o <file>               Output file name.",
                 "    --fix-file-endings      Change file ending to one new-line symbol.",
                 "    --fix-single-statement  Enclose single-statement blocks in brackets, ",
-                "                            format `if`-`else if`-`else`-squences.",
+                "                            format `if`-`else if`-`else`-sequences.",
                 "    --help                  Display this information.",
             };
             // clang-format on
-            for (const char* l : text) { std::cout << l << std::endl; }
+            for (const auto& l : text) { uxs::stdbuf::out.write(l).endl(); }
             return 0;
         } else if (arg[0] != '-') {
             input_file_name = arg;
         } else {
-            std::cerr << "code-format: fatal error: unknown flag `" << arg << "`" << std::endl;
+            printError("unknown command line option `{}`", arg);
             return -1;
         }
     }
 
     if (input_file_name.empty()) {
-        std::cerr << "code-format: fatal error: no input file specified" << std::endl;
+        printError("no input file specified");
         return -1;
     }
 
     std::string src_full_text;
-    if (std::ifstream ifile(input_file_name); ifile) {
-        size_t file_sz = static_cast<size_t>(ifile.seekg(0, std::ios_base::end).tellg());
+    if (uxs::filebuf ifile(input_file_name.c_str(), "r"); ifile) {
+        size_t file_sz = static_cast<size_t>(ifile.seek(0, uxs::seekdir::kEnd));
         src_full_text.resize(file_sz);
-        ifile.seekg(0);
-        ifile.read(src_full_text.data(), file_sz);
-        src_full_text.resize(ifile.gcount());
+        ifile.seek(0);
+        src_full_text.resize(ifile.read(src_full_text));
     } else {
-        std::cerr << "code-format: fatal error: could not open input file `" << input_file_name << "`";
+        printError("could not open input file `{}`", input_file_name);
         return -1;
     }
 
-    std::cout << "Processing: " << input_file_name << "..." << std::endl;
+    uxs::println("Processing: {}...", input_file_name);
 
 #if 0
     auto proc_func = [](Parser& parser, std::string& output, const Parser::Token& token) {
         static const std::string type_names[] = {"kEof",  "kSymbol",     "kIdentifier",  "kString", "kInteger",
                                                  "kReal", "kPreprocDef", "kPreprocBody", "kComment"};
-        std::cout << type_names[static_cast<unsigned>(token.type)] << ", ws_count = " << token.ws_count << ": \""
-                  << token.getTrimmedText() << "\"" << std::endl;
+         uxs::println("{}, ws_count = {}: \"{}\"", type_names[static_cast<unsigned>(token.type)], token.ws_count,
+                  token.getTrimmedText());
         output.append(token.text);
     };
 #else
@@ -347,10 +366,10 @@ int main(int argc, char** argv) {
     if (fix_file_endings) { full_text.push_back('\n'); }
     if (!output_file_name.empty() || full_text != src_full_text) {
         if (output_file_name.empty()) { output_file_name = input_file_name; }
-        if (std::ofstream ofile(output_file_name); ofile) {
-            ofile.write(full_text.data(), full_text.size());
+        if (uxs::filebuf ofile(output_file_name.c_str(), "w"); ofile) {
+            ofile.write(full_text);
         } else {
-            std::cerr << "code-format: error: could not open output file `" << output_file_name << "`";
+            printError("could not open output file `{}`", output_file_name);
             return -1;
         }
     }
