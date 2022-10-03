@@ -1,4 +1,5 @@
 #include "uxs/algorithm.h"
+#include "uxs/cli/parser.h"
 #include "uxs/format.h"
 #include "uxs/io/filebuf.h"
 #include "uxs/stringcvt.h"
@@ -7,6 +8,9 @@
 #include <cassert>
 #include <functional>
 #include <vector>
+
+#define XSTR(s) STR(s)
+#define STR(s)  #s
 
 namespace lex_detail {
 #include "lex_defs.h"
@@ -290,41 +294,52 @@ std::string processText(const char* text, size_t length, const TextProcessFunc& 
 }
 
 int main(int argc, char** argv) {
+    bool show_help = false, show_version = false;
     std::string input_file_name, output_file_name;
     bool fix_file_endings = false;
     bool fix_single_statement = false;
-    for (int i = 1; i < argc; ++i) {
-        std::string_view arg(argv[i]);
-        if (arg == "-o") {
-            if (++i < argc) { output_file_name = argv[i]; }
-        } else if (arg == "--fix-file-endings") {
-            fix_file_endings = true;
-        } else if (arg == "--fix-single-statement") {
-            fix_single_statement = true;
-        } else if (arg == "--help") {
-            // clang-format off
-            static constexpr std::string_view text[] = {
-                "Usage: code-format [options] file",
-                "Options:",
-                "    -o <file>               Output file name.",
-                "    --fix-file-endings      Change file ending to one new-line symbol.",
-                "    --fix-single-statement  Enclose single-statement blocks in brackets, ",
-                "                            format `if`-`else if`-`else`-sequences.",
-                "    --help                  Display this information.",
-            };
-            // clang-format on
-            for (const auto& l : text) { uxs::stdbuf::out.write(l).endl(); }
-            return 0;
-        } else if (arg[0] != '-') {
-            input_file_name = arg;
-        } else {
-            printError("unknown command line option `{}`", arg);
-            return -1;
-        }
-    }
+    auto cli =
+        uxs::cli::command(argv[0])
+        << uxs::cli::overview(
+               "This is a tool for enclosing single statements in braces (and other cosmetic fixes) in C and C++ code")
+        << uxs::cli::value("file", input_file_name)
+        << (uxs::cli::option({"-o"}) & uxs::cli::value("<file>", output_file_name)) % "Output file name."
+        << uxs::cli::option({"--fix-file-endings"}).set(fix_file_endings) % "Change file ending to one new-line symbol."
+        << uxs::cli::option({"--fix-single-statement"}).set(fix_single_statement) %
+               "Enclose single-statement blocks in brackets,\n"
+               "format `if`-`else if`-`else`-sequences."
+        << uxs::cli::option({"-h", "--help"}).set(show_help) % "Display this information."
+        << uxs::cli::option({"-V", "--version"}).set(show_version) % "Display version.";
 
-    if (input_file_name.empty()) {
-        printError("no input file specified");
+    auto parse_result = cli->parse(argc, argv);
+    if (show_help) {
+        for (auto const* node = parse_result.node; node; node = node->get_parent()) {
+            if (node->get_type() == uxs::cli::node_type::kCommand) {
+                uxs::stdbuf::out.write(static_cast<const uxs::cli::basic_command<char>&>(*node).make_man_page(true));
+                break;
+            }
+        }
+        return 0;
+    } else if (show_version) {
+        uxs::stdbuf::out.write(XSTR(VERSION)).endl();
+        return 0;
+    } else if (parse_result.status != uxs::cli::parsing_status::kOk) {
+        switch (parse_result.status) {
+            case uxs::cli::parsing_status::kUnknownOption: {
+                printError("unknown command line option `{}`", argv[parse_result.arg_count]);
+            } break;
+            case uxs::cli::parsing_status::kInvalidValue: {
+                if (parse_result.arg_count < argc) {
+                    printError("invalid command line argument `{}`", argv[parse_result.arg_count]);
+                } else {
+                    printError("expected command line argument after `{}`", argv[parse_result.arg_count - 1]);
+                }
+            } break;
+            case uxs::cli::parsing_status::kUnspecifiedValue: {
+                if (input_file_name.empty()) { printError("no input file specified"); }
+            } break;
+            default: break;
+        }
         return -1;
     }
 
