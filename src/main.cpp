@@ -329,7 +329,11 @@ int main(int argc, char** argv) {
                 printError("unknown command line option `{}`", argv[parse_result.arg_count]);
             } break;
             case uxs::cli::parsing_status::kInvalidValue: {
-                printError("invalid command line argument: {}", argv[parse_result.arg_count]);
+                if (parse_result.arg_count < argc) {
+                    printError("invalid command line argument `{}`", argv[parse_result.arg_count]);
+                } else {
+                    printError("expected command line argument after `{}`", argv[parse_result.arg_count - 1]);
+                }
             } break;
             case uxs::cli::parsing_status::kUnspecifiedValue: {
                 if (input_file_name.empty()) { printError("no input file specified"); }
