@@ -21,10 +21,10 @@ namespace lex_detail {
 }
 
 template<typename... Args>
-void printError(std::string_view msg, Args&&... args) {
-    std::string full_msg("\033[1;37mcode-format: \033[0;31merror: \033[0m");
-    full_msg += msg;
-    uxs::fprintln(uxs::stdbuf::err, full_msg, std::forward<Args>(args)...);
+void printError(uxs::format_string<Args...> fmt, const Args&... args) {
+    std::string msg("\033[1;37mcode-format: \033[0;31merror: \033[0m");
+    msg += fmt.get();
+    uxs::vprint(uxs::stdbuf::err, msg, uxs::make_format_args(args...)).endl();
 }
 
 class Parser {
@@ -77,7 +77,7 @@ class Parser {
     Parser(const char* text, size_t length) {
         first_ = text, last_ = text + length;
         revert_stack_.reserve(16);
-        lex_state_stack_.reserve_at_curr(256);
+        lex_state_stack_.reserve(256);
         lex_state_stack_.push_back(lex_detail::sc_initial);
     }
     void parseNext(Token& token);
@@ -87,7 +87,7 @@ class Parser {
     unsigned line_ = 1, pos_ = 1;
     const char* first_ = nullptr;
     const char* last_ = nullptr;
-    uxs::basic_inline_dynbuffer<int, 1> lex_state_stack_;
+    uxs::inline_basic_dynbuffer<int, 1> lex_state_stack_;
     std::vector<Token> revert_stack_;
 
     void trackPosition(std::string_view s) {
@@ -125,7 +125,7 @@ void Parser::parseNext(Token& token) {
             pat = lex_detail::lex(first, last, lex_state_stack_.p_curr(), &llen, stack_limitation);
             if (pat >= lex_detail::predef_pat_default || !stack_limitation) { break; }
             // enlarge state stack and continue analysis
-            lex_state_stack_.reserve_at_curr(llen);
+            lex_state_stack_.reserve(llen);
             first = last;
         }
         first_ += llen;

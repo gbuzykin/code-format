@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.12)
 project(code-format)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG_REDUCED_BUFFERS")
 if(MSVC)
@@ -25,7 +25,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVERSION=${VERSION}")
 ###############################################################################
 
 # these instructions search the directory tree when cmake is
-# invoked and put all files that match the pattern in the variables 
+# invoked and put all files that match the pattern in the variables
 # `sources` and `data`
 if(WIN32)
   set(uxs_platform_dir    uxs/platform/win)
