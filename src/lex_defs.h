@@ -2,21 +2,28 @@
 /* clang-format off */
 
 enum {
+    flag_has_more = 1,
+    flag_at_beg_of_line = 2
+};
+
+enum {
     err_end_of_input = -1,
     predef_pat_default = 0,
     pat_preproc_body,
     pat_comment,
-    pat_preproc,
     pat_string,
     pat_id,
     pat_int,
     pat_real,
+    pat_preproc,
     pat_ws,
+    pat_eol,
     pat_other,
     total_pattern_count
 };
 
 enum {
     sc_initial = 0,
+    sc_at_beg_of_line,
     sc_preproc
 };

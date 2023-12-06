@@ -1,3 +1,4 @@
+%start at_beg_of_line
 %start preproc
 
 dig       [0-9]
@@ -7,7 +8,7 @@ int       {dig}+
 int_hex   0(x|X){hdig}+
 id        ({letter}|_)({letter}|{dig}|_)*
 real      (({dig}+(\.{dig}*)?)|(\.{dig}+))((e|E)(\+|\-)?{dig}+)?
-ws        [ \t\n] | \\(.|\n)
+ws        [ \t] | \\(.|\n)
 not_eol   [^\n\\] | \\(.|\n)
 
 comment1    \/\* ( [^*\\] | \\(.|\n) | \*+([^*/\\]|\\(.|\n)) )* \*+\/
@@ -21,12 +22,13 @@ string2     \' ( [^'\\] | \\(.|\n) )* \'
 preproc_body    <preproc> {not_eol}*
 
 comment     {comment1}|{comment2}
-preproc     #{ws}*{id}
 string      {string1}|{string2}
 id          {id}
 int         {int}|{int_hex}
 real        {real}
+preproc     <at_beg_of_line> #{ws}*{id}
 ws          {ws}+
+eol         \n
 other       .
 
 %%
