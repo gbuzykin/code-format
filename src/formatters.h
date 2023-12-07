@@ -2,11 +2,14 @@
 
 #include "parser.h"
 
+#include <filesystem>
 #include <functional>
 
 struct FormattingParameters {
     bool fix_file_endings = false;
     bool fix_single_statement = false;
+    bool remove_already_included = false;
+    std::vector<std::pair<std::filesystem::path, bool>> include_dirs;
 };
 
 using TokenProcessFunc = std::function<void(Parser&, std::string&, const Parser::Token&)>;
