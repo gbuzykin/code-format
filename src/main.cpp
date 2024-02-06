@@ -141,6 +141,7 @@ int main(int argc, char** argv) {
         << uxs::cli::option({"--fix-single-statement"}).set(fmt_params.fix_single_statement) %
                "Enclose single-statement blocks in brackets,\n"
                "format `if`-`else if`-`else`-sequences."
+        << uxs::cli::option({"--fix-id-naming"}).set(fmt_params.fix_id_naming) % "Fix identifier naming."
         << uxs::cli::option({"--remove-already-included"}).set(fmt_params.remove_already_included) %
                "Remove include directives for already included headers."
         << (uxs::cli::option({"-I"}) & uxs::cli::basic_value_wrapper<char>("<dir>",
@@ -265,6 +266,21 @@ int main(int argc, char** argv) {
     };
 
     std::string full_text = processText(src_full_text, fn_token);
+
+    if (fmt_params.fix_id_naming) {
+        auto fn_rename = [](Parser& parser, std::string& output, const Parser::Token& token) {
+            if (token.type == Parser::TokenType::kIdentifier) {
+                auto id = token.getTrimmedText();
+                std::string new_id{id};
+                output.append(token.text.substr(0, token.ws_count));
+                output.append(new_id);
+                return;
+            }
+            output.append(token.text);
+        };
+        full_text = processText(full_text, fn_rename);
+    }
+
     if (fmt_params.fix_file_endings) { full_text.push_back('\n'); }
 
     printDebug(1, "-------------- included files:");

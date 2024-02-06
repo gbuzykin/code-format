@@ -8,6 +8,7 @@
 struct FormattingParameters {
     bool fix_file_endings = false;
     bool fix_single_statement = false;
+    bool fix_id_naming = false;
     bool remove_already_included = false;
     std::vector<std::pair<std::filesystem::path, bool>> include_dirs;
 };
