@@ -1,20 +1,45 @@
 #include "formatters.h"
 
-std::string processText(uxs::span<const char> text, const TokenProcessFunc& fn_token, bool is_at_beg_of_line) {
+std::string processText(std::string file_name, uxs::span<const char> text, const TokenProcessFunc& fn_token,
+                        bool is_at_beg_of_line) {
     std::string output;
-    Parser parser(text, is_at_beg_of_line);
+    Parser parser(std::move(file_name), text, is_at_beg_of_line);
     Parser::Token token;
 
     output.reserve(text.size() + text.size() / 10);
     do {
         parser.parseNext(token);
         if (token.type == Parser::TokenType::kPreprocBody) {
-            output.append(processText(token.text, fn_token, false));
+            output.append(processText("", token.text, fn_token, false));
         } else {
             fn_token(parser, output, token);
         }
     } while (!token.isEof());
     return output;
+}
+
+std::pair<std::string, bool> extractIncludePath(std::string_view text) {
+    text = uxs::trim_string(text);
+    if (text.size() < 2) { return std::make_pair(std::string{}, false); }
+    bool is_angled = false;
+    if (text.front() == '<' && text.back() == '>') {
+        is_angled = true;
+    } else if (text.front() != '\"' || text.back() != '\"') {
+        return std::make_pair(std::string{}, false);
+    }
+    return std::make_pair(uxs::decode_escapes(text.substr(1, text.size() - 2), "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\""),
+                          is_angled);
+}
+
+void fixIdNaming(Parser& parser, std::string& output, const Parser::Token& token) {
+    if (token.type == Parser::TokenType::kIdentifier) {
+        auto id = token.getTrimmedText();
+        std::string new_id{id};
+        output.append(token.text.substr(0, token.ws_count));
+        output.append(new_id);
+        return;
+    }
+    output.append(token.text);
 }
 
 void fixSingleStatement(Parser& parser, std::string& output, const Parser::Token& first_tkn) {

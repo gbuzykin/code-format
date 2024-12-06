@@ -10,27 +10,14 @@
 
 namespace {
 
-std::pair<std::string, bool> extractIncludePath(std::string_view text) {
-    text = uxs::trim_string(text);
-    if (text.size() < 2) { return std::make_pair(std::string{}, false); }
-    bool is_angled = false;
-    if (text.front() == '<' && text.back() == '>') {
-        is_angled = true;
-    } else if (text.front() != '\"' || text.back() != '\"') {
-        return std::make_pair(std::string{}, false);
-    }
-    return std::make_pair(uxs::decode_escapes(text.substr(1, text.size() - 2), "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\""),
-                          is_angled);
-}
-
-std::pair<std::filesystem::path, bool> findIncludePath(std::filesystem::path path, bool is_angled,
+std::pair<std::filesystem::path, bool> findIncludePath(const std::filesystem::path& path, bool is_angled,
                                                        const FormattingParameters& fmt_params,
-                                                       const std::vector<std::filesystem::path>& path_stack) {
+                                                       const FormattingContext& ctx) {
     if (path.is_absolute()) {
         return std::make_pair(std::filesystem::exists(path) ? path.lexically_normal() : std::filesystem::path{}, false);
     }
     if (!is_angled) {
-        for (const auto& dir : uxs::make_reverse_range(path_stack)) {
+        for (const auto& dir : uxs::make_reverse_range(ctx.path_stack)) {
             auto path_cat = dir.parent_path() / path;
             if (std::filesystem::exists(path_cat)) {
                 return std::make_pair((std::filesystem::current_path() / path_cat).lexically_normal(), false);
@@ -46,19 +33,18 @@ std::pair<std::filesystem::path, bool> findIncludePath(std::filesystem::path pat
     return std::make_pair(std::filesystem::path{}, false);
 }
 
-void collectIncludedFiles(std::vector<std::filesystem::path>& path_stack, const FormattingParameters& fmt_params,
-                          std::set<std::filesystem::path>& indirectly_included_files) {
+bool collectIncludedFiles(std::string_view file_name, const FormattingParameters& fmt_params, FormattingContext& ctx) {
     std::string text;
-    if (uxs::filebuf ifile(path_stack.back().c_str(), "r"); ifile) {
+    if (uxs::filebuf ifile(ctx.path_stack.back().c_str(), "r"); ifile) {
         size_t file_sz = static_cast<size_t>(ifile.seek(0, uxs::seekdir::end));
         text.resize(file_sz);
         ifile.seek(0);
         text.resize(ifile.read(text));
     } else {
-        printWarning("could not open include file `{}`", path_stack.back());
+        return false;
     }
 
-    Parser parser(text);
+    Parser parser(std::string{file_name}, text);
     Parser::Token token;
     unsigned if_level = 0;
 
@@ -71,20 +57,27 @@ void collectIncludedFiles(std::vector<std::filesystem::path>& path_stack, const 
                     parser.parseNext(token);
                     if (token.type == Parser::TokenType::kPreprocBody) {
                         auto [file_name, is_angled] = extractIncludePath(token.text);
-                        auto [file_path, is_system] = findIncludePath(file_name, is_angled, fmt_params, path_stack);
+                        auto [file_path, is_system] = findIncludePath(file_name, is_angled, fmt_params, ctx);
                         if (!file_path.empty()) {
                             if (!is_system) {
-                                if (uxs::find(path_stack, file_path).second) {
-                                    printWarning("recursively included file `{}`", file_path);
-                                    return;
+                                if (uxs::find(ctx.path_stack, file_path).second) {
+                                    printWarning("{}:{}: recursively included file `{}`", parser.getFileName(),
+                                                 parser.getLn(), file_path);
+                                    break;
                                 }
-                                path_stack.emplace_back(file_path);
-                                collectIncludedFiles(path_stack, fmt_params, indirectly_included_files);
-                                path_stack.pop_back();
+                                ctx.path_stack.emplace_back(file_path);
+                                if (!collectIncludedFiles(file_name, fmt_params, ctx)) {
+                                    printWarning("{}:{}: could not open include file `{}`", parser.getFileName(),
+                                                 parser.getLn(), file_name);
+                                }
+                                ctx.path_stack.pop_back();
                             }
-                            if (path_stack.size() > 1) { indirectly_included_files.emplace(std::move(file_path)); }
+                            if (ctx.path_stack.size() > 1) {
+                                ctx.indirectly_included_files.emplace(std::move(file_path));
+                            }
                         } else {
-                            printWarning("could not find included file `{}`", file_name);
+                            printWarning("{}:{}: could not find included file `{}`", parser.getFileName(),
+                                         parser.getLn(), file_name);
                         }
                     } else {
                         parser.revert(token);
@@ -97,6 +90,8 @@ void collectIncludedFiles(std::vector<std::filesystem::path>& path_stack, const 
             }
         }
     } while (!token.isEof());
+
+    return true;
 }
 
 }  // namespace
@@ -177,18 +172,15 @@ int main(int argc, char** argv) {
 
     uxs::println("Processing: {}...", input_file_name);
 
-    std::vector<std::filesystem::path> path_stack;
-    std::vector<std::pair<std::filesystem::path, int>> included_files;
-    std::set<std::filesystem::path> indirectly_included_files;
+    FormattingContext ctx;
 
-    path_stack.emplace_back((std::filesystem::current_path() / input_file_name).lexically_normal());
+    ctx.path_stack.emplace_back((std::filesystem::current_path() / input_file_name).lexically_normal());
 
-    if (fmt_params.remove_already_included) { collectIncludedFiles(path_stack, fmt_params, indirectly_included_files); }
+    if (fmt_params.remove_already_included) { collectIncludedFiles(input_file_name, fmt_params, ctx); }
 
     unsigned if_level = 0;
 
-    auto fn_token = [&fmt_params, &path_stack, &included_files, &indirectly_included_files, &if_level](
-                        Parser& parser, std::string& output, const Parser::Token& token) {
+    auto fn_token = [&fmt_params, &ctx, &if_level](Parser& parser, std::string& output, const Parser::Token& token) {
         static constexpr std::array<std::string_view, 9> type_names = {
             "kEof", "kSymbol", "kIdentifier", "kString", "kInteger", "kReal", "kPreprocId", "kPreprocBody", "kComment"};
         printDebug(2, "token: {}, ws_count = {}: {:?}", type_names[static_cast<unsigned>(token.type)], token.ws_count,
@@ -202,14 +194,14 @@ int main(int argc, char** argv) {
                     printDebug(2, "preproc body: {}", next.text);
                     if (id == "include") {
                         auto [file_name, is_angled] = extractIncludePath(next.text);
-                        auto [file_path, is_system] = findIncludePath(file_name, is_angled, fmt_params, path_stack);
+                        auto [file_path, is_system] = findIncludePath(file_name, is_angled, fmt_params, ctx);
                         if (!file_path.empty()) {
                             if (fmt_params.remove_already_included &&
-                                (uxs::find_if(included_files, uxs::is_equal_to(file_path)).second ||
-                                 uxs::find(indirectly_included_files, file_path).second)) {
+                                (uxs::find_if(ctx.included_files, uxs::is_equal_to(file_path)).second ||
+                                 uxs::find(ctx.indirectly_included_files, file_path).second)) {
                                 return;
                             }
-                            if (if_level == 0) { included_files.emplace_back(std::move(file_path), token.line); }
+                            if (if_level == 0) { ctx.included_files.emplace_back(std::move(file_path), token.line); }
                         }
                     } else if (id == "if" || id == "ifdef" || id == "ifndef") {
                         ++if_level;
@@ -234,30 +226,18 @@ int main(int argc, char** argv) {
         }
     };
 
-    std::string full_text = processText(src_full_text, fn_token);
+    std::string full_text = processText(input_file_name, src_full_text, fn_token);
 
-    if (fmt_params.fix_id_naming) {
-        auto fn_rename = [](Parser& parser, std::string& output, const Parser::Token& token) {
-            if (token.type == Parser::TokenType::kIdentifier) {
-                auto id = token.getTrimmedText();
-                std::string new_id{id};
-                output.append(token.text.substr(0, token.ws_count));
-                output.append(new_id);
-                return;
-            }
-            output.append(token.text);
-        };
-        full_text = processText(full_text, fn_rename);
-    }
+    if (fmt_params.fix_id_naming) { full_text = processText(input_file_name, full_text, fixIdNaming); }
 
     if (fmt_params.fix_file_endings) { full_text.push_back('\n'); }
 
     printDebug(1, "-------------- included files:");
-    for (const auto& [file_path, ln] : included_files) {
+    for (const auto& [file_path, ln] : ctx.included_files) {
         printDebug(1, "include:{}: {}", ln, file_path.generic_string());
     }
     printDebug(1, "-------------- indirectly included files:");
-    for (const auto& file_path : indirectly_included_files) {
+    for (const auto& file_path : ctx.indirectly_included_files) {
         printDebug(1, "include: {}", file_path.generic_string());
     }
 

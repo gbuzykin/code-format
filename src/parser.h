@@ -82,16 +82,20 @@ class Parser {
         }
     };
 
-    Parser(uxs::span<const char> text, bool is_at_beg_of_line = true) {
+    Parser(std::string file_name, uxs::span<const char> text, bool is_at_beg_of_line = true)
+        : file_name_(std::move(file_name)) {
         first_ = text.data(), last_ = text.data() + text.size();
         revert_stack_.reserve(16);
         lex_state_stack_.reserve(256);
         lex_state_stack_.push_back(is_at_beg_of_line ? lex_detail::sc_at_beg_of_line : lex_detail::sc_initial);
     }
+    const std::string& getFileName() const { return file_name_; }
+    unsigned getLn() const { return line_; }
     void parseNext(Token& token);
     void revert(Token token) { revert_stack_.emplace_back(token); }
 
  private:
+    std::string file_name_;
     unsigned line_ = 1, pos_ = 1;
     const char* first_ = nullptr;
     const char* last_ = nullptr;
