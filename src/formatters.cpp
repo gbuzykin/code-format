@@ -1,7 +1,5 @@
 #include "formatters.h"
 
-#include <array>
-
 std::string processText(uxs::span<const char> text, const TokenProcessFunc& fn_token, bool is_at_beg_of_line) {
     std::string output;
     Parser parser(text, is_at_beg_of_line);

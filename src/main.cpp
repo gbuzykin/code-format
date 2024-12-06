@@ -1,41 +1,15 @@
 #include "formatters.h"
 
 #include "uxs/cli/parser.h"
-#include "uxs/format.h"
 #include "uxs/io/filebuf.h"
-#include "uxs/stringalg.h"
 
-#include <array>
 #include <set>
 
 #define XSTR(s) STR(s)
 #define STR(s)  #s
 
-unsigned g_debug_level = 0;
-
-template<typename... Args>
-void printError(uxs::format_string<Args...> fmt, const Args&... args) {
-    std::string msg("\033[1;37mcode-format: \033[0;31merror: \033[0m");
-    msg += fmt.get();
-    uxs::vprint(uxs::stdbuf::err, msg, uxs::make_format_args(args...)).endl();
-}
-
-template<typename... Args>
-void printWarning(uxs::format_string<Args...> fmt, const Args&... args) {
-    std::string msg("\033[1;37mcode-format: \033[0;35mwarning: \033[0m");
-    msg += fmt.get();
-    uxs::vprint(uxs::stdbuf::out, msg, uxs::make_format_args(args...)).endl();
-}
-
-template<typename... Args>
-void printDebug(unsigned level, uxs::format_string<Args...> fmt, const Args&... args) {
-    if (g_debug_level < level) { return; }
-    std::string msg("\033[1;37mcode-format: \033[0;33mdebug: \033[0m");
-    msg += fmt.get();
-    uxs::vprint(uxs::stdbuf::out, msg, uxs::make_format_args(args...)).endl();
-}
-
 namespace {
+
 std::pair<std::string, bool> extractIncludePath(std::string_view text) {
     text = uxs::trim_string(text);
     if (text.size() < 2) { return std::make_pair(std::string{}, false); }
@@ -81,7 +55,7 @@ void collectIncludedFiles(std::vector<std::filesystem::path>& path_stack, const 
         ifile.seek(0);
         text.resize(ifile.read(text));
     } else {
-        printWarning("could not open include file `{}`", path_stack.back().native());
+        printWarning("could not open include file `{}`", path_stack.back());
     }
 
     Parser parser(text);
@@ -101,7 +75,7 @@ void collectIncludedFiles(std::vector<std::filesystem::path>& path_stack, const 
                         if (!file_path.empty()) {
                             if (!is_system) {
                                 if (uxs::find(path_stack, file_path).second) {
-                                    printWarning("recursively included file `{}`", file_path.native());
+                                    printWarning("recursively included file `{}`", file_path);
                                     return;
                                 }
                                 path_stack.emplace_back(file_path);
@@ -124,6 +98,7 @@ void collectIncludedFiles(std::vector<std::filesystem::path>& path_stack, const 
         }
     } while (!token.isEof());
 }
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -164,12 +139,7 @@ int main(int argc, char** argv) {
 
     auto parse_result = cli->parse(argc, argv);
     if (show_help) {
-        for (auto const* node = parse_result.node; node; node = node->get_parent()) {
-            if (node->get_type() == uxs::cli::node_type::command) {
-                uxs::stdbuf::out.write(static_cast<const uxs::cli::basic_command<char>&>(*node).make_man_page(true));
-                break;
-            }
-        }
+        uxs::stdbuf::out.write(parse_result.node->get_command()->make_man_page(uxs::cli::text_coloring::colored));
         return 0;
     } else if (show_version) {
         uxs::println(uxs::stdbuf::out, "{}", XSTR(VERSION));
@@ -177,13 +147,13 @@ int main(int argc, char** argv) {
     } else if (parse_result.status != uxs::cli::parsing_status::ok) {
         switch (parse_result.status) {
             case uxs::cli::parsing_status::unknown_option: {
-                printError("unknown command line option `{}`", argv[parse_result.arg_count]);
+                printError("unknown command line option `{}`", argv[parse_result.argc_parsed]);
             } break;
             case uxs::cli::parsing_status::invalid_value: {
-                if (parse_result.arg_count < argc) {
-                    printError("invalid command line argument `{}`", argv[parse_result.arg_count]);
+                if (parse_result.argc_parsed < argc) {
+                    printError("invalid command line argument `{}`", argv[parse_result.argc_parsed]);
                 } else {
-                    printError("expected command line argument after `{}`", argv[parse_result.arg_count - 1]);
+                    printError("expected command line argument after `{}`", argv[parse_result.argc_parsed - 1]);
                 }
             } break;
             case uxs::cli::parsing_status::unspecified_value: {
@@ -221,9 +191,8 @@ int main(int argc, char** argv) {
                         Parser& parser, std::string& output, const Parser::Token& token) {
         static constexpr std::array<std::string_view, 9> type_names = {
             "kEof", "kSymbol", "kIdentifier", "kString", "kInteger", "kReal", "kPreprocId", "kPreprocBody", "kComment"};
-        printDebug(2, "token: {}, ws_count = {}: {}", type_names[static_cast<unsigned>(token.type)], token.ws_count,
-                   token.type == Parser::TokenType::kString ? uxs::make_quoted_string(token.getTrimmedText()) :
-                                                              token.getTrimmedText());
+        printDebug(2, "token: {}, ws_count = {}: {:?}", type_names[static_cast<unsigned>(token.type)], token.ws_count,
+                   token.getTrimmedText());
         if (token.type == Parser::TokenType::kPreprocId) {
             auto id = token.getTrailingIdentifier();
             if (id != "define") {
