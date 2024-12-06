@@ -1,6 +1,6 @@
 #include "formatters.h"
 
-#include "uxs/stringalg.h"
+#include "print.h"
 
 std::string processText(std::string file_name, std::span<const char> text, const FormattingParameters& params,
                         const TokenFunc& fn, TextProcFlags flags) {
@@ -94,6 +94,38 @@ void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingPar
 
     auto id = token.getTrimmedText();
     std::string new_id{id};
+
+    auto next = parser.parseNext();
+    if (!next.isSymbol('(')) {
+        if (id.size() > 1 &&
+            (id[0] == '_' ||
+             (!uxs::is_upper(id[0]) && !(id[0] == 'k' && uxs::is_upper(id[1])) /* Probably enum member */ &&
+              !uxs::all_of(
+                  id, [](char ch) { return ch == '_' || uxs::is_digit(ch) || uxs::is_lower(ch); }) /* No upper case */
+              && !uxs::all_of(id, [](char ch) {
+                     return ch == '_' || uxs::is_digit(ch) || uxs::is_upper(ch);
+                 }) /* No lower case */))) {
+            new_id.clear();
+            bool is_member = false;
+            if (id[0] == '_') {
+                is_member = true;
+                id = id.substr(1);
+            }
+            new_id.push_back(id[0]);
+            for (auto it = id.begin() + 1; it != id.end(); ++it) {
+                if ((uxs::is_digit(*it) || uxs::is_upper(*it)) && uxs::is_lower(*(it - 1))) { new_id.push_back('_'); }
+                new_id.push_back(uxs::to_lower(*it));
+            }
+            if (is_member) { new_id.push_back('_'); }
+        }
+    } else {  // is a function
+        if (id[0] == '_') {
+            printWarning("{}:{}: underscored function name {}", parser.getFileName(), parser.getLn(), id);
+        }
+    }
+
+    parser.revert(next);
+
     output.append(token.text.substr(0, token.ws_count));
     output.append(new_id);
 }
