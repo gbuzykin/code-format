@@ -2,9 +2,6 @@
 
 #include "parser.h"
 
-#include <filesystem>
-#include <functional>
-
 struct FormattingParameters {
     bool fix_file_endings = false;
     bool fix_single_statement = false;

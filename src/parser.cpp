@@ -4,6 +4,8 @@ namespace lex_detail {
 #include "lex_analyzer.inl"
 }
 
+unsigned g_debug_level = 0;
+
 void Parser::parseNext(Token& token) {
     if (!revert_stack_.empty()) {
         token = revert_stack_.back();
