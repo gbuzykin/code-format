@@ -1,6 +1,8 @@
 #include "formatters.h"
 
-std::string processText(std::string file_name, uxs::span<const char> text, const FormattingParameters& params,
+#include "uxs/stringalg.h"
+
+std::string processText(std::string file_name, std::span<const char> text, const FormattingParameters& params,
                         const TokenFunc& fn, TextProcFlags flags) {
     Parser parser(std::move(file_name), text, flags);
     Parser::Token token;

@@ -2,6 +2,7 @@
 
 #include "parser.h"
 
+#include <filesystem>
 #include <set>
 
 enum class IncludePathType { kCustom = 0, kSystem };
@@ -24,7 +25,7 @@ struct FormattingContext {
 
 using TokenFunc = std::function<void(Parser&, const Parser::Token&, unsigned, std::string&)>;
 
-std::string processText(std::string file_name, uxs::span<const char> text, const FormattingParameters& params,
+std::string processText(std::string file_name, std::span<const char> text, const FormattingParameters& params,
                         const TokenFunc& fn_token, TextProcFlags flags = TextProcFlags::kAtBegOfLine);
 
 std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text);
