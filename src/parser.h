@@ -1,7 +1,9 @@
 #pragma once
 
 #include "uxs/algorithm.h"
-#include "uxs/format_fs.h"
+#include "uxs/stringcvt.h"
+
+#include <span>
 
 namespace lex_detail {
 #include "lex_defs.h"
@@ -9,30 +11,6 @@ namespace lex_detail {
 
 enum class TextProcFlags { kNone = 0, kAtBegOfLine = 1 };
 UXS_IMPLEMENT_BITWISE_OPS_FOR_ENUM(TextProcFlags, int);
-
-extern unsigned g_debug_level;
-
-template<typename... Args>
-void printError(uxs::format_string<Args...> fmt, const Args&... args) {
-    std::string msg("\033[1;37mcode-format: \033[0;31merror: \033[0m");
-    msg += fmt.get();
-    uxs::vprint(uxs::stdbuf::err, msg, uxs::make_format_args(args...)).endl();
-}
-
-template<typename... Args>
-void printWarning(uxs::format_string<Args...> fmt, const Args&... args) {
-    std::string msg("\033[1;37mcode-format: \033[0;35mwarning: \033[0m");
-    msg += fmt.get();
-    uxs::vprint(uxs::stdbuf::out, msg, uxs::make_format_args(args...)).endl();
-}
-
-template<typename... Args>
-void printDebug(unsigned level, uxs::format_string<Args...> fmt, const Args&... args) {
-    if (g_debug_level < level) { return; }
-    std::string msg("\033[1;37mcode-format: \033[0;33mdebug: \033[0m");
-    msg += fmt.get();
-    uxs::vprint(uxs::stdbuf::out, msg, uxs::make_format_args(args...)).endl();
-}
 
 class Parser {
  public:
@@ -85,7 +63,7 @@ class Parser {
         }
     };
 
-    Parser(std::string file_name, uxs::span<const char> text, TextProcFlags flags = TextProcFlags::kAtBegOfLine)
+    Parser(std::string file_name, std::span<const char> text, TextProcFlags flags = TextProcFlags::kAtBegOfLine)
         : file_name_(std::move(file_name)) {
         first_ = text.data(), last_ = text.data() + text.size();
         revert_stack_.reserve(16);
