@@ -7,6 +7,9 @@ namespace lex_detail {
 #include "lex_defs.h"
 }
 
+enum class TextProcFlags { kNone = 0, kAtBegOfLine = 1 };
+UXS_IMPLEMENT_BITWISE_OPS_FOR_ENUM(TextProcFlags, int);
+
 extern unsigned g_debug_level;
 
 template<typename... Args>
@@ -60,10 +63,10 @@ class Parser {
         bool isAnyOfIdentifiers(Range&& r) const {
             return type == TokenType::kIdentifier && uxs::find(r, getTrimmedText()).second;
         }
-        std::string_view getTrailingIdentifier() const {
-            return text.substr(uxs::find_if(text, [](char ch) { return uxs::is_alpha(ch) || ch == '_'; }).first -
-                               text.begin());
+        bool isPreprocIdentifier(std::string_view id) const {
+            return type == TokenType::kPreprocId && getPreprocIdentifier() == id;
         }
+        std::string_view getPreprocIdentifier() const;
         int trackLevel(int level, char ch_open, char ch_close) const {
             if (type == TokenType::kSymbol) {
                 if (text[ws_count] == ch_open) {
@@ -82,12 +85,13 @@ class Parser {
         }
     };
 
-    Parser(std::string file_name, uxs::span<const char> text, bool is_at_beg_of_line = true)
+    Parser(std::string file_name, uxs::span<const char> text, TextProcFlags flags = TextProcFlags::kAtBegOfLine)
         : file_name_(std::move(file_name)) {
         first_ = text.data(), last_ = text.data() + text.size();
         revert_stack_.reserve(16);
         lex_state_stack_.reserve(256);
-        lex_state_stack_.push_back(is_at_beg_of_line ? lex_detail::sc_at_beg_of_line : lex_detail::sc_initial);
+        lex_state_stack_.push_back(!!(flags & TextProcFlags::kAtBegOfLine) ? lex_detail::sc_at_beg_of_line :
+                                                                             lex_detail::sc_initial);
     }
     const std::string& getFileName() const { return file_name_; }
     unsigned getLn() const { return line_; }
