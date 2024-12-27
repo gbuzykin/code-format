@@ -1,48 +1,91 @@
 #include "formatters.h"
 
-std::string processText(std::string file_name, uxs::span<const char> text, const TokenProcessFunc& fn_token,
-                        bool is_at_beg_of_line) {
-    std::string output;
-    Parser parser(std::move(file_name), text, is_at_beg_of_line);
+std::string processText(std::string file_name, uxs::span<const char> text, const FormattingParameters& params,
+                        const TokenFunc& fn, TextProcFlags flags) {
+    Parser parser(std::move(file_name), text, flags);
     Parser::Token token;
+    std::string output;
+
+    bool already_matched = false;
+    unsigned skip_level = 0;
 
     output.reserve(text.size() + text.size() / 10);
+
     do {
         parser.parseNext(token);
-        if (token.type == Parser::TokenType::kPreprocBody) {
-            output.append(processText("", token.text, fn_token, false));
-        } else {
-            fn_token(parser, output, token);
+        fn(parser, token, skip_level, output);
+        if (token.type == Parser::TokenType::kPreprocId) {
+            auto id = token.getPreprocIdentifier();
+
+            parser.parseNext(token);
+            if (token.type != Parser::TokenType::kPreprocBody || id != "define") { parser.revert(token); }
+
+            if (id == "define") {
+                if (token.type == Parser::TokenType::kPreprocBody) {
+                    output.append(processText(
+                        "", token.text, params,
+                        [skip_level, &fn](Parser& parser, const Parser::Token& token, unsigned, std::string& output) {
+                            fn(parser, token, skip_level, output);
+                        },
+                        TextProcFlags::kNone));
+                }
+            } else if (id == "if" || id == "ifdef" || id == "ifndef") {
+                if (!skip_level) {
+                    bool matched = token.type == Parser::TokenType::kPreprocBody &&
+                                   uxs::contains(params.definitions, uxs::trim_string(token.text));
+                    if (id == "ifndef" ? matched : !matched) { ++skip_level; }
+                    already_matched = false;
+                } else {
+                    ++skip_level;
+                }
+            } else if (id == "elif") {
+                if (!skip_level) {
+                    ++skip_level, already_matched = true;
+                } else if (skip_level == 1 && !already_matched && token.type == Parser::TokenType::kPreprocBody &&
+                           uxs::contains(params.definitions, uxs::trim_string(token.text))) {
+                    skip_level = 0;
+                }
+            } else if (id == "else") {
+                if (!skip_level) {
+                    ++skip_level, already_matched = true;
+                } else if (skip_level == 1 && !already_matched) {
+                    skip_level = 0;
+                }
+            } else if (id == "endif") {
+                if (skip_level) { --skip_level; }
+            }
         }
     } while (!token.isEof());
+
     return output;
 }
 
-std::pair<std::string, bool> extractIncludePath(std::string_view text) {
+std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text) {
     text = uxs::trim_string(text);
-    if (text.size() < 2) { return std::make_pair(std::string{}, false); }
-    bool is_angled = false;
+    if (text.size() < 2) { return {}; }
+    IncludeBrackets brackets = IncludeBrackets::kDoubleQuotes;
     if (text.front() == '<' && text.back() == '>') {
-        is_angled = true;
+        brackets = IncludeBrackets::kAngled;
     } else if (text.front() != '\"' || text.back() != '\"') {
-        return std::make_pair(std::string{}, false);
+        return {};
     }
     return std::make_pair(uxs::decode_escapes(text.substr(1, text.size() - 2), "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\""),
-                          is_angled);
+                          brackets);
 }
 
-void fixIdNaming(Parser& parser, std::string& output, const Parser::Token& token) {
-    if (token.type == Parser::TokenType::kIdentifier) {
-        auto id = token.getTrimmedText();
-        std::string new_id{id};
-        output.append(token.text.substr(0, token.ws_count));
-        output.append(new_id);
+void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingParameters& params, std::string& output) {
+    if (token.type != Parser::TokenType::kIdentifier) {
+        output.append(token.text);
         return;
     }
-    output.append(token.text);
+
+    auto id = token.getTrimmedText();
+    std::string new_id{id};
+    output.append(token.text.substr(0, token.ws_count));
+    output.append(new_id);
 }
 
-void fixSingleStatement(Parser& parser, std::string& output, const Parser::Token& first_tkn) {
+void fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::string& output) {
     Parser::Token token;
     bool is_else_block = false;
 
@@ -79,7 +122,7 @@ void fixSingleStatement(Parser& parser, std::string& output, const Parser::Token
             bool make_nl = token.hasNewLine(), has_comments = false;
             if (token.isAnyOfIdentifiers(key_words)) {
                 output.append(token.text);
-                fixSingleStatement(parser, output, token);
+                fixSingleStatement(parser, token, output);
             } else {
                 for (int level = 0; !token.isEof();) {
                     output.append(token.text);
@@ -101,7 +144,7 @@ void fixSingleStatement(Parser& parser, std::string& output, const Parser::Token
             parser.parseNext(token);
             for (int level = 1; !token.isEof();) {
                 output.append(token.text);
-                if (token.isAnyOfIdentifiers(key_words)) { fixSingleStatement(parser, output, token); }
+                if (token.isAnyOfIdentifiers(key_words)) { fixSingleStatement(parser, token, output); }
                 parser.parseNext(token);
                 if (level == 0) { break; }
                 level = token.trackLevel(level, '{', '}');

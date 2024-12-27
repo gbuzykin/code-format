@@ -73,3 +73,7 @@ void Parser::parseNext(Token& token) {
         }
     }
 }
+
+std::string_view Parser::Token::getPreprocIdentifier() const {
+    return text.substr(uxs::find_if(text, [](char ch) { return uxs::is_alpha(ch) || ch == '_'; }).first - text.begin());
+}
