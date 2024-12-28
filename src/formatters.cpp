@@ -14,12 +14,13 @@ std::string processText(std::string file_name, std::span<const char> text, const
     output.reserve(text.size() + text.size() / 10);
 
     do {
-        parser.parseNext(token);
+        token = parser.parseNext();
+        if (!parser.getFileName().empty() && token.line == 1 && token.pos == 1) { token.trimEmptyLines(); }
         fn(parser, token, skip_level, output);
         if (token.type == Parser::TokenType::kPreprocId) {
             auto id = token.getPreprocIdentifier();
 
-            parser.parseNext(token);
+            token = parser.parseNext();
             if (token.type != Parser::TokenType::kPreprocBody || id != "define") { parser.revert(token); }
 
             if (id == "define") {
@@ -34,7 +35,7 @@ std::string processText(std::string file_name, std::span<const char> text, const
             } else if (id == "if" || id == "ifdef" || id == "ifndef") {
                 if (!skip_level) {
                     bool matched = token.type == Parser::TokenType::kPreprocBody &&
-                                   uxs::contains(params.definitions, uxs::trim_string(token.text));
+                                   uxs::contains(params.definitions, token.getTrimmedText());
                     if (id == "ifndef" ? matched : !matched) { ++skip_level; }
                     already_matched = false;
                 } else {
@@ -44,7 +45,7 @@ std::string processText(std::string file_name, std::span<const char> text, const
                 if (!skip_level) {
                     ++skip_level, already_matched = true;
                 } else if (skip_level == 1 && !already_matched && token.type == Parser::TokenType::kPreprocBody &&
-                           uxs::contains(params.definitions, uxs::trim_string(token.text))) {
+                           uxs::contains(params.definitions, token.getTrimmedText())) {
                     skip_level = 0;
                 }
             } else if (id == "else") {
@@ -63,7 +64,6 @@ std::string processText(std::string file_name, std::span<const char> text, const
 }
 
 std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text) {
-    text = uxs::trim_string(text);
     if (text.size() < 2) { return {}; }
     IncludeBrackets brackets = IncludeBrackets::kDoubleQuotes;
     if (text.front() == '<' && text.back() == '>') {
@@ -73,6 +73,17 @@ std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text
     }
     return std::make_pair(uxs::decode_escapes(text.substr(1, text.size() - 2), "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\""),
                           brackets);
+}
+
+void skipLine(Parser& parser, const Parser::Token& first_tkn, std::string& output) {
+    if (first_tkn.isFirst()) {
+        auto next = parser.parseNext();
+        next.trimEmptyLines();
+        next.line = 1, next.pos = 1;
+        parser.revert(next);
+    } else {
+        output.append(first_tkn.getEmptyLines());
+    }
 }
 
 void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingParameters& params, std::string& output) {
@@ -87,12 +98,55 @@ void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingPar
     output.append(new_id);
 }
 
-void fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::string& output) {
+bool fixPragmaOnce(Parser& parser, const Parser::Token& first_tkn, std::string& output) {
+    std::string_view ext{parser.getFileName()};
+    auto dot_pos = ext.rfind('.');
+    ext = dot_pos != std::string::npos ? ext.substr(dot_pos + 1) : std::string_view{};
+    bool is_header = ext.starts_with('h');
+
+    auto next = parser.parseNext();
+
+    if (is_header && first_tkn.isFirstSignificant() && first_tkn.isPreprocIdentifier("ifndef") &&
+        next.type == Parser::TokenType::kPreprocBody) {
+        auto defined = next.getFirstIdentifier();
+
+        auto next2 = parser.parseNext();
+        auto next3 = parser.parseNext();
+        parser.revert(next3);
+        parser.revert(next2);
+
+        if (next2.isPreprocIdentifier("define") && next3.isPreprocBodyFirstId(defined)) {
+            // C-style header protection
+            parser.revert(next);
+            return false;
+        }
+    }
+
+    if (is_header && first_tkn.isFirstSignificant()) {
+        if (!first_tkn.isFirst()) { output.append("\n\n"); }
+        output.append("#pragma once\n\n");
+    }
+
+    if (first_tkn.isPreprocIdentifier("pragma") && next.isPreprocBodyFirstId("once")) {
+        skipLine(parser, first_tkn, output);
+        return true;
+    }
+
+    parser.revert(next);
+    return false;
+}
+
+bool fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::string& output) {
+    static constexpr std::array<std::string_view, 4> key_words = {"if", "while", "for", "do"};
+    if (!first_tkn.isAnyOfIdentifiers(key_words)) { return false; }
+
+    output.append(first_tkn.text);
+
     Parser::Token token;
     bool is_else_block = false;
 
     do {
-        parser.parseNext(token);
+        token = parser.parseNext();
         if (!is_else_block && !first_tkn.isIdentifier("do")) {
             int level = -1;
             while (!token.isEof()) {
@@ -102,7 +156,7 @@ void fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::str
                 } else if (token.isSymbol('(')) {
                     level = 1;
                 }
-                parser.parseNext(token);
+                token = parser.parseNext();
                 if (level == 0) { break; }
             }
         }
@@ -111,43 +165,38 @@ void fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::str
         comments.reserve(16);
         while (token.isComment()) {
             comments.emplace_back(token);
-            parser.parseNext(token);
+            token = parser.parseNext();
         }
 
         if (!token.isEof()) { output.append(" {"); }
         for (const auto& comment : comments) { output.append(comment.text); }
         comments.clear();
-        if (token.isEof()) { return; }
+        if (token.isEof()) { return true; }
 
-        static std::array<std::string_view, 5> key_words = {"if", "while", "for", "do"};
         if (!token.isSymbol('{')) {
             bool make_nl = token.hasNewLine(), has_comments = false;
-            if (token.isAnyOfIdentifiers(key_words)) {
-                output.append(token.text);
-                fixSingleStatement(parser, token, output);
-            } else {
+            if (!fixSingleStatement(parser, token, output)) {
                 for (int level = 0; !token.isEof();) {
                     output.append(token.text);
                     if (level == 0 && token.isSymbol(';')) { break; }
                     level = token.trackLevel(level, '{', '}');
-                    parser.parseNext(token);
+                    token = parser.parseNext();
                 }
             }
 
-            parser.parseNext(token);
+            token = parser.parseNext();
             while (token.isComment() && !token.hasNewLine()) {
                 has_comments = true;
                 output.append(token.text);
-                parser.parseNext(token);
+                token = parser.parseNext();
             }
 
             output.append(make_nl || has_comments ? first_tkn.makeIndented("}") : " }");
         } else {
-            parser.parseNext(token);
+            token = parser.parseNext();
             for (int level = 1; !token.isEof();) {
-                output.append(token.text);
-                if (token.isAnyOfIdentifiers(key_words)) { fixSingleStatement(parser, token, output); }
-                parser.parseNext(token);
+                if (!fixSingleStatement(parser, token, output)) { output.append(token.text); }
+                token = parser.parseNext();
                 if (level == 0) { break; }
                 level = token.trackLevel(level, '{', '}');
             }
@@ -157,28 +206,28 @@ void fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::str
         while (token.isComment()) {
             has_comments = true;
             output.append(token.text);
-            parser.parseNext(token);
+            token = parser.parseNext();
         }
 
         if (first_tkn.isIdentifier("do")) {
             if (token.isIdentifier("while")) {
                 output.append(has_comments ? first_tkn.makeIndented("while") : " while");
-                parser.parseNext(token);
+                token = parser.parseNext();
             }
             for (int level = 0; !token.isEof();) {
                 output.append(token.text);
                 if (level == 0 && token.isSymbol(';')) { break; }
                 level = token.trackLevel(level, '(', ')');
-                parser.parseNext(token);
+                token = parser.parseNext();
             }
             break;
         } else if (!is_else_block && first_tkn.isIdentifier("if")) {
             if (token.isIdentifier("else")) {
                 output.append(has_comments ? first_tkn.makeIndented("else") : " else");
-                parser.parseNext(token);
+                token = parser.parseNext();
                 while (token.isComment()) {
                     comments.emplace_back(token);
-                    parser.parseNext(token);
+                    token = parser.parseNext();
                 }
                 if (token.isIdentifier("if")) {
                     for (const auto& comment : comments) { output.append(comment.text); }
@@ -198,4 +247,6 @@ void fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::str
         parser.revert(token);
         break;
     } while (true);
+
+    return true;
 }

@@ -50,10 +50,9 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
     auto fn = [&params, &ctx](Parser& parser, const Parser::Token& token, unsigned skip_level, std::string&) {
         if (skip_level || !token.isPreprocIdentifier("include")) { return; }
 
-        Parser::Token next;
-        parser.parseNext(next);
+        auto next = parser.parseNext();
         if (next.type == Parser::TokenType::kPreprocBody) {
-            auto [file_name, brackets] = extractIncludePath(next.text);
+            auto [file_name, brackets] = extractIncludePath(next.getTrimmedText());
             auto [file_path, path_type] = findIncludePath(file_name, brackets, params, ctx);
             if (!file_path.empty()) {
                 if (path_type == IncludePathType::kCustom) {
@@ -102,6 +101,7 @@ int main(int argc, char** argv) {
                "Enclose single-statement blocks in brackets,\n"
                "format `if`-`else if`-`else`-sequences."
         << uxs::cli::option({"--fix-id-naming"}).set(params.fix_id_naming) % "Fix identifier naming."
+        << uxs::cli::option({"--fix-pragma-once"}).set(params.fix_pragma_once) % "Fix pragma once preproc command."
         << uxs::cli::option({"--remove-already-included"}).set(params.remove_already_included) %
                "Remove include directives for already included headers."
         << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) % "Add definition."
@@ -188,38 +188,31 @@ int main(int argc, char** argv) {
                        token.ws_count, token.getTrimmedText());
         }
 
+        if (token.isEof() && params.fix_file_endings) { return; }
+
+        if (params.fix_pragma_once && fixPragmaOnce(parser, token, output)) { return; }
+        if (params.fix_single_statement && fixSingleStatement(parser, token, output)) { return; }
+
         if (token.isPreprocIdentifier("include")) {
-            Parser::Token next;
-            parser.parseNext(next);
+            auto next = parser.parseNext();
             if (next.type == Parser::TokenType::kPreprocBody) {
                 if (!skip_level) {
-                    auto [file_name, brackets] = extractIncludePath(next.text);
+                    auto [file_name, brackets] = extractIncludePath(next.getTrimmedText());
                     auto [file_path, path_type] = findIncludePath(file_name, brackets, params, ctx);
                     if (!file_path.empty()) {
                         if (params.remove_already_included &&
                             (uxs::find_if(ctx.included_files, uxs::is_equal_to(file_path)).second ||
                              uxs::find(ctx.indirectly_included_files, file_path).second)) {
+                            skipLine(parser, token, output);
                             return;
                         }
                         ctx.included_files.emplace_back(std::move(file_path), token.line);
                     }
                 }
-                output.append(token.text);
-                output.append(next.text);
-            } else {
-                output.append(token.text);
-                parser.revert(next);
             }
-            return;
+            parser.revert(next);
         }
-
-        if (!token.isEof() || !params.fix_file_endings) {
-            static constexpr std::array<std::string_view, 5> key_words = {"if", "while", "for", "do"};
-            output.append(token.text);
-            if (params.fix_single_statement && token.isAnyOfIdentifiers(key_words)) {
-                fixSingleStatement(parser, token, output);
-            }
-        }
+        output.append(token.text);
     };
 
     full_text = processText(input_file_name, full_text, params, fn);
