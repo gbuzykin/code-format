@@ -8,10 +8,10 @@ int       {dig}+
 int_hex   0(x|X){hdig}+
 id        ({letter}|_)({letter}|{dig}|_)*
 real      (({dig}+(\.{dig}*)?)|(\.{dig}+))((e|E)(\+|\-)?{dig}+)?
-ws        [ \t] | \\(.|\n)
+ws        [ \t] | \\\n
 not_eol   [^\n\\] | \\(.|\n)
 
-comment1    \/\* ( [^*\\] | \\(.|\n) | \*+([^*/\\]|\\(.|\n)) )* \*+\/
+comment1    \/\* ( [^*\\] | \\(.|\n) | \*+([^*/\\] | \\(.|\n)) )* \*+\/
 comment2    \/\/ {not_eol}*
 
 string1     \" ( [^"\\] | \\(.|\n) )* \"

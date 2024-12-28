@@ -12,6 +12,7 @@ struct FormattingParameters {
     bool fix_file_endings = false;
     bool fix_single_statement = false;
     bool fix_id_naming = false;
+    bool fix_pragma_once = false;
     bool remove_already_included = false;
     std::vector<std::string> definitions;
     std::vector<std::pair<std::filesystem::path, IncludePathType>> include_dirs;
@@ -30,5 +31,7 @@ std::string processText(std::string file_name, std::span<const char> text, const
 
 std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text);
 
+void skipLine(Parser& parser, const Parser::Token& first_tkn, std::string& output);
 void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingParameters& params, std::string& output);
-void fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::string& output);
+bool fixPragmaOnce(Parser& parser, const Parser::Token& first_tkn, std::string& output);
+bool fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::string& output);
