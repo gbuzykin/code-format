@@ -2,6 +2,8 @@
 
 #include "print.h"
 
+#include "uxs/string_alg.h"
+
 std::string processText(std::string file_name, std::span<const char> text, const FormattingParameters& params,
                         const TokenFunc& fn, TextProcFlags flags) {
     Parser parser(std::move(file_name), text, flags);
@@ -180,16 +182,13 @@ bool fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::str
     do {
         token = parser.parseNext();
         if (!is_else_block && !first_tkn.isIdentifier("do")) {
-            int level = -1;
-            while (!token.isEof()) {
+            for (int level = -1; level != 0 && !token.isEof(); token = parser.parseNext()) {
                 output.append(token.text);
                 if (level >= 0) {
                     level = token.trackLevel(level, '(', ')');
                 } else if (token.isSymbol('(')) {
                     level = 1;
                 }
-                token = parser.parseNext();
-                if (level == 0) { break; }
             }
         }
 
@@ -208,11 +207,10 @@ bool fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::str
         if (!token.isSymbol('{')) {
             bool make_nl = token.hasNewLine(), has_comments = false;
             if (!fixSingleStatement(parser, token, output)) {
-                for (int level = 0; !token.isEof();) {
+                for (int level = 0; !token.isEof(); token = parser.parseNext()) {
                     output.append(token.text);
                     if (level == 0 && token.isSymbol(';')) { break; }
                     level = token.trackLevel(level, '{', '}');
-                    token = parser.parseNext();
                 }
             }
 
@@ -226,11 +224,11 @@ bool fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::str
             output.append(make_nl || has_comments ? first_tkn.makeIndented("}") : " }");
         } else {
             token = parser.parseNext();
-            for (int level = 1; !token.isEof();) {
-                if (!fixSingleStatement(parser, token, output)) { output.append(token.text); }
-                token = parser.parseNext();
-                if (level == 0) { break; }
-                level = token.trackLevel(level, '{', '}');
+            for (int level = 1; level != 0 && !token.isEof(); token = parser.parseNext()) {
+                if (!fixSingleStatement(parser, token, output)) {
+                    output.append(token.text);
+                    level = token.trackLevel(level, '{', '}');
+                }
             }
         }
 
@@ -246,11 +244,10 @@ bool fixSingleStatement(Parser& parser, const Parser::Token& first_tkn, std::str
                 output.append(has_comments ? first_tkn.makeIndented("while") : " while");
                 token = parser.parseNext();
             }
-            for (int level = 0; !token.isEof();) {
+            for (int level = 0; !token.isEof(); token = parser.parseNext()) {
                 output.append(token.text);
                 if (level == 0 && token.isSymbol(';')) { break; }
                 level = token.trackLevel(level, '(', ')');
-                token = parser.parseNext();
             }
             break;
         } else if (!is_else_block && first_tkn.isIdentifier("if")) {

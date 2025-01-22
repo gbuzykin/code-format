@@ -9,7 +9,7 @@ enum class IncludePathType { kCustom = 0, kSystem };
 enum class IncludeBrackets { kDoubleQuotes = 0, kAngled };
 
 struct FormattingParameters {
-    bool fix_file_endings = false;
+    bool fix_file_ending = false;
     bool fix_single_statement = false;
     bool fix_id_naming = false;
     bool fix_pragma_once = false;
