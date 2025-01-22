@@ -95,7 +95,7 @@ int main(int argc, char** argv) {
                "This is a tool for enclosing single statements in braces (and other cosmetic fixes) in C and C++ code")
         << uxs::cli::value("file", input_file_name)
         << (uxs::cli::option({"-o"}) & uxs::cli::value("<file>", output_file_name)) % "Output file name."
-        << uxs::cli::option({"--fix-file-endings"}).set(params.fix_file_endings) %
+        << uxs::cli::option({"--fix-file-ending"}).set(params.fix_file_ending) %
                "Change file ending to one new-line symbol."
         << uxs::cli::option({"--fix-single-statement"}).set(params.fix_single_statement) %
                "Enclose single-statement blocks in brackets,\n"
@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
                        token.ws_count, token.getTrimmedText());
         }
 
-        if (token.isEof() && params.fix_file_endings) { return; }
+        if (token.isEof() && params.fix_file_ending) { return; }
 
         if (params.fix_pragma_once && fixPragmaOnce(parser, token, output)) { return; }
         if (params.fix_single_statement && fixSingleStatement(parser, token, output)) { return; }
@@ -217,7 +217,7 @@ int main(int argc, char** argv) {
 
     full_text = processText(input_file_name, full_text, params, fn);
 
-    if (params.fix_file_endings) { full_text.push_back('\n'); }
+    if (params.fix_file_ending) { full_text.push_back('\n'); }
 
     printDebug(1, "-------------- included files:");
     for (const auto& [file_path, ln] : ctx.included_files) {

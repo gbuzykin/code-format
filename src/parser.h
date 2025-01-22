@@ -11,7 +11,7 @@ namespace lex_detail {
 }
 
 enum class TextProcFlags { kNone = 0, kAtBegOfLine = 1 };
-UXS_IMPLEMENT_BITWISE_OPS_FOR_ENUM(TextProcFlags, int);
+UXS_IMPLEMENT_BITWISE_OPS_FOR_ENUM(TextProcFlags);
 
 class Parser {
  public:
