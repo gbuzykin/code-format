@@ -68,13 +68,25 @@ std::string processText(std::string file_name, std::span<const char> text, const
 std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text) {
     if (text.size() < 2) { return {}; }
     IncludeBrackets brackets = IncludeBrackets::kDoubleQuotes;
-    if (text.front() == '<' && text.back() == '>') {
+    if (text.front() == '<') {
         brackets = IncludeBrackets::kAngled;
-    } else if (text.front() != '\"' || text.back() != '\"') {
+        auto pos = text.find('>');
+        if (pos == std::string::npos) { return {}; }
+        text = text.substr(1, pos - 1);
+    } else if (text.front() == '\"') {
+        auto it = text.begin() + 1;
+        for (; it != text.end(); ++it) {
+            if (*it == '\\') {
+                if (++it == text.end()) { return {}; }
+            }
+            if (*it == '\"') { break; }
+        }
+        if (it == text.end()) { return {}; }
+        text = std::string_view(text.begin() + 1, it);
+    } else {
         return {};
     }
-    return std::make_pair(uxs::decode_escapes(text.substr(1, text.size() - 2), "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\""),
-                          brackets);
+    return std::make_pair(uxs::decode_escapes(text, "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\""), brackets);
 }
 
 void skipLine(Parser& parser, const Parser::Token& first_tkn, std::string& output) {
