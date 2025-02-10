@@ -13,6 +13,7 @@ std::pair<std::filesystem::path, IncludePathType> findIncludePath(const std::fil
                                                                   IncludeBrackets brackets,
                                                                   const FormattingParameters& params,
                                                                   const FormattingContext& ctx) {
+    if (path.empty()) { return {}; }
     if (path.is_absolute()) {
         if (std::filesystem::exists(path)) { return std::make_pair(path.lexically_normal(), IncludePathType::kCustom); }
         return {};
