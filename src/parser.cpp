@@ -7,8 +7,8 @@ namespace lex_detail {
 unsigned g_debug_level = 0;
 
 namespace {
-size_t countWs(std::string_view text) {
-    size_t count = 0;
+std::size_t countWs(std::string_view text) {
+    std::size_t count = 0;
     for (; count != text.size(); ++count) {
         if (text[count] == '\\' && count + 1 != text.size() && text[count + 1] == '\n') {
             ++count;
@@ -33,17 +33,17 @@ Parser::Token Parser::parseNext() {
 
     while (true) {
         int pat = 0;
-        unsigned llen = 0;
+        std::size_t llen = 0;
         const char *first = first_, *lexeme = first;
         while (true) {
-            bool stack_limitation = false;
             const char* last = last_;
-            if (lex_state_stack_.avail() < static_cast<size_t>(last - first)) {
+            if (lex_state_stack_.avail() < static_cast<std::size_t>(last - first)) {
                 last = first + lex_state_stack_.avail();
-                stack_limitation = true;
             }
-            pat = lex_detail::lex(first, last, lex_state_stack_.p_curr(), &llen, stack_limitation);
-            if (pat >= lex_detail::predef_pat_default || !stack_limitation) { break; }
+            auto* sptr = lex_state_stack_.endp();
+            pat = lex_detail::lex(first, last, &sptr, &llen, last != last_ ? lex_detail::flag_has_more : 0);
+            lex_state_stack_.setsize(sptr - lex_state_stack_.data());
+            if (pat >= lex_detail::predef_pat_default || last == last_) { break; }
             // enlarge state stack and continue analysis
             lex_state_stack_.reserve(llen);
             first = last;
@@ -77,7 +77,7 @@ Parser::Token Parser::parseNext() {
             lex_state_stack_.back() = lex_detail::sc_at_beg_of_line;
         } else if (pat != lex_detail::pat_ws) {
             if (pat != lex_detail::pat_preproc) { lex_state_stack_.back() = lex_detail::sc_initial; }
-            token.text = std::string_view{token_start, static_cast<size_t>(first_ - token_start)};
+            token.text = std::string_view{token_start, static_cast<std::size_t>(first_ - token_start)};
             if (token.type == TokenType::kPreprocBody) { token.ws_count = countWs(token.text); }
             if (token.type != TokenType::kComment) {
                 token.is_first_significant = is_first_significant_token_;

@@ -40,7 +40,7 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
                                     FormattingContext& ctx) {
     std::string text;
     if (uxs::filebuf ifile(ctx.path_stack.back().c_str(), "r"); ifile) {
-        size_t file_sz = static_cast<size_t>(ifile.seek(0, uxs::seekdir::end));
+        std::size_t file_sz = static_cast<std::size_t>(ifile.seek(0, uxs::seekdir::end));
         text.resize(file_sz);
         ifile.seek(0);
         text.resize(ifile.read(text));
@@ -128,10 +128,10 @@ int main(int argc, char** argv) {
 
     auto parse_result = cli->parse(argc, argv);
     if (show_help) {
-        uxs::stdbuf::out.write(parse_result.node->get_command()->make_man_page(uxs::cli::text_coloring::colored));
+        uxs::stdbuf::out().write(parse_result.node->get_command()->make_man_page(uxs::cli::text_coloring::colored));
         return 0;
     } else if (show_version) {
-        uxs::println(uxs::stdbuf::out, "{}", XSTR(VERSION));
+        uxs::println(uxs::stdbuf::out(), "{}", XSTR(VERSION));
         return 0;
     } else if (parse_result.status != uxs::cli::parsing_status::ok) {
         switch (parse_result.status) {
@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
 
     std::string full_text;
     if (uxs::filebuf ifile(input_file_name.c_str(), "r"); ifile) {
-        size_t file_sz = static_cast<size_t>(ifile.seek(0, uxs::seekdir::end));
+        std::size_t file_sz = static_cast<std::size_t>(ifile.seek(0, uxs::seekdir::end));
         full_text.resize(file_sz);
         ifile.seek(0);
         full_text.resize(ifile.read(full_text));
