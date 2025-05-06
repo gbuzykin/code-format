@@ -1,7 +1,7 @@
 #pragma once
 
 #include "uxs/algorithm.h"
-#include "uxs/stringcvt.h"
+#include "uxs/string_cvt.h"
 
 #include <span>
 #include <vector>
@@ -31,7 +31,7 @@ class Parser {
         TokenType type = TokenType::kEof;
         bool is_first_significant = false;
         unsigned line = 0, pos = 0;
-        size_t ws_count = 0;
+        std::size_t ws_count = 0;
         std::string_view text;
         bool isFirst() const { return line == 1 && pos == 1; }
         bool isFirstSignificant() const { return is_first_significant; }
@@ -66,7 +66,7 @@ class Parser {
         std::string_view getTrimmedText() const { return text.substr(ws_count); }
         bool hasNewLine() const { return text.substr(0, ws_count).find('\n') != std::string::npos; }
         std::string makeIndented(std::string_view text) const {
-            std::string result = '\n' + std::string(std::max<size_t>(1, pos) - 1, ' ');
+            std::string result = '\n' + std::string(std::max<std::size_t>(1, pos) - 1, ' ');
             return result += text;
         }
 

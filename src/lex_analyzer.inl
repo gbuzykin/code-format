@@ -49,10 +49,11 @@ static int accept[47] = {
     6, 0, 0, 6, 0, 5, 2, 0, 0, 7, 0
 };
 
-static int lex(const char* first, const char* last, int** p_sptr, unsigned* p_llen, int flags) {
-    int *sptr = *p_sptr, *sptr0 = sptr - *p_llen;
+static int lex(const char* first, const char* last, int** p_sptr, size_t* p_llen, int flags) {
+    int* sptr = *p_sptr;
+    int* sptr0 = sptr - *p_llen;
     int state = *(sptr - 1);
-    while (first < last) { /* Analyze till transition is impossible */
+    while (first != last) { /* Analyze till transition is impossible */
         uint8_t meta = symb2meta[(unsigned char)*first];
         do {
             int l = base[state] + meta;
@@ -67,15 +68,15 @@ static int lex(const char* first, const char* last, int** p_sptr, unsigned* p_ll
     }
     if ((flags & flag_has_more) || sptr == sptr0) {
         *p_sptr = sptr;
-        *p_llen = (unsigned)(sptr - sptr0);
+        *p_llen = (size_t)(sptr - sptr0);
         return err_end_of_input;
     }
 unroll:
     *p_sptr = sptr0;
-    while (sptr != sptr0) { /* Unroll down-to last accepting state */
-        int n_pat = accept[(state = *(sptr - 1))];
+    while (sptr != sptr0) { /* Unroll down to last accepting state */
+        int n_pat = accept[*(sptr - 1)];
         if (n_pat > 0) {
-            *p_llen = (unsigned)(sptr - sptr0);
+            *p_llen = (size_t)(sptr - sptr0);
             return n_pat;
         }
         --sptr;
