@@ -4,8 +4,8 @@
 
 #include "uxs/string_alg.h"
 
-std::string processText(std::string file_name, std::span<const char> text, const FormattingParameters& params,
-                        const TokenFunc& fn, TextProcFlags flags) {
+std::string processText(std::string file_name, std::span<const char> text, FormattingContext& ctx, const TokenFunc& fn,
+                        TextProcFlags flags) {
     Parser parser(std::move(file_name), text, flags);
     Parser::Token token;
     std::string output;
@@ -18,7 +18,7 @@ std::string processText(std::string file_name, std::span<const char> text, const
     do {
         token = parser.parseNext();
         if (!parser.getFileName().empty() && token.line == 1 && token.pos == 1) { token.trimEmptyLines(); }
-        fn(parser, token, skip_level, output);
+        if (fn(parser, token, skip_level, output)) { return output; }
         if (token.type == Parser::TokenType::kPreprocId) {
             auto id = token.getPreprocIdentifier();
 
@@ -27,17 +27,18 @@ std::string processText(std::string file_name, std::span<const char> text, const
 
             if (id == "define") {
                 if (token.type == Parser::TokenType::kPreprocBody) {
+                    if (!skip_level) { ctx.definitions.emplace_back(token.getFirstIdentifier()); }
                     output.append(processText(
-                        "", token.text, params,
+                        "", token.text, ctx,
                         [skip_level, &fn](Parser& parser, const Parser::Token& token, unsigned, std::string& output) {
-                            fn(parser, token, skip_level, output);
+                            return fn(parser, token, skip_level, output);
                         },
                         TextProcFlags::kNone));
                 }
             } else if (id == "if" || id == "ifdef" || id == "ifndef") {
                 if (!skip_level) {
                     bool matched = token.type == Parser::TokenType::kPreprocBody &&
-                                   uxs::contains(params.definitions, token.getTrimmedText());
+                                   uxs::contains(ctx.definitions, token.getTrimmedText());
                     if (id == "ifndef" ? matched : !matched) { ++skip_level; }
                     already_matched = false;
                 } else {
@@ -47,7 +48,7 @@ std::string processText(std::string file_name, std::span<const char> text, const
                 if (!skip_level) {
                     ++skip_level, already_matched = true;
                 } else if (skip_level == 1 && !already_matched && token.type == Parser::TokenType::kPreprocBody &&
-                           uxs::contains(params.definitions, token.getTrimmedText())) {
+                           uxs::contains(ctx.definitions, token.getTrimmedText())) {
                     skip_level = 0;
                 }
             } else if (id == "else") {
