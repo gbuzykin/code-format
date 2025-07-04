@@ -49,7 +49,20 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
     }
 
     auto fn = [&params, &ctx](Parser& parser, const Parser::Token& token, unsigned skip_level, std::string&) {
-        if (skip_level || !token.isPreprocIdentifier("include")) { return; }
+        if (skip_level) { return false; }
+
+        if (token.isPreprocIdentifier("pragma")) {
+            auto next = parser.parseNext();
+            if (next.type == Parser::TokenType::kPreprocBody) {
+                if (next.getTrimmedText() == "once" && !ctx.once_included_files.emplace(ctx.path_stack.back()).second) {
+                    return true;
+                }
+            } else {
+                parser.revert(next);
+            }
+        } else if (!token.isPreprocIdentifier("include")) {
+            return false;
+        }
 
         auto next = parser.parseNext();
         if (next.type == Parser::TokenType::kPreprocBody) {
@@ -57,17 +70,12 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
             auto [file_path, path_type] = findIncludePath(file_name, brackets, params, ctx);
             if (!file_path.empty()) {
                 if (path_type == IncludePathType::kCustom) {
-                    if (!uxs::find(ctx.path_stack, file_path).second) {
-                        ctx.path_stack.emplace_back(file_path);
-                        if (!collectIndirectlyIncludedFiles(file_name, params, ctx)) {
-                            printWarning("{}:{}: could not open include file `{}`", parser.getFileName(),
-                                         parser.getLn(), file_name);
-                        }
-                        ctx.path_stack.pop_back();
-                    } else {
-                        printWarning("{}:{}: recursively included file `{}`", parser.getFileName(), parser.getLn(),
-                                     file_path);
+                    ctx.path_stack.emplace_back(file_path);
+                    if (!collectIndirectlyIncludedFiles(file_name, params, ctx)) {
+                        printWarning("{}:{}: could not open include file `{}`", parser.getFileName(), parser.getLn(),
+                                     file_name);
                     }
+                    ctx.path_stack.pop_back();
                 }
                 if (ctx.path_stack.size() > 1) { ctx.indirectly_included_files.emplace(std::move(file_path)); }
             } else {
@@ -77,9 +85,11 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
         } else {
             parser.revert(next);
         }
+
+        return false;
     };
 
-    processText(std::string{file_name}, text, params, fn);
+    processText(std::string{file_name}, text, ctx, fn);
 
     return true;
 }
@@ -89,7 +99,10 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
 int main(int argc, char** argv) {
     bool show_help = false, show_version = false;
     std::string input_file_name, output_file_name;
+
+    FormattingContext ctx;
     FormattingParameters params;
+
     auto cli =
         uxs::cli::command(argv[0])
         << uxs::cli::overview(
@@ -105,7 +118,7 @@ int main(int argc, char** argv) {
         << uxs::cli::option({"--fix-pragma-once"}).set(params.fix_pragma_once) % "Fix pragma once preproc command."
         << uxs::cli::option({"--remove-already-included"}).set(params.remove_already_included) %
                "Remove include directives for already included headers."
-        << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) % "Add definition."
+        << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", ctx.definitions)) % "Add definition."
         << (uxs::cli::option({"-I"}) & uxs::cli::basic_value_wrapper<char>("<dirs>...",
                                                                            [&params](std::string_view dir) {
                                                                                params.include_dirs.emplace_back(
@@ -166,7 +179,6 @@ int main(int argc, char** argv) {
 
     uxs::println("Processing: {}...", input_file_name);
 
-    FormattingContext ctx;
     std::string src_full_text = full_text;
 
     ctx.path_stack.emplace_back((std::filesystem::current_path() / input_file_name).lexically_normal());
@@ -174,9 +186,10 @@ int main(int argc, char** argv) {
     if (params.remove_already_included) { collectIndirectlyIncludedFiles(input_file_name, params, ctx); }
 
     if (params.fix_id_naming) {
-        full_text = processText(input_file_name, full_text, params,
+        full_text = processText(input_file_name, full_text, ctx,
                                 [&params](Parser& parser, const Parser::Token& token, unsigned, std::string& output) {
                                     fixIdNaming(parser, token, params, output);
+                                    return false;
                                 });
     }
 
@@ -189,10 +202,10 @@ int main(int argc, char** argv) {
                        token.ws_count, token.getTrimmedText());
         }
 
-        if (token.isEof() && params.fix_file_ending) { return; }
+        if (token.isEof() && params.fix_file_ending) { return false; }
 
-        if (params.fix_pragma_once && fixPragmaOnce(parser, token, output)) { return; }
-        if (params.fix_single_statement && fixSingleStatement(parser, token, output)) { return; }
+        if (params.fix_pragma_once && fixPragmaOnce(parser, token, output)) { return false; }
+        if (params.fix_single_statement && fixSingleStatement(parser, token, output)) { return false; }
 
         if (token.isPreprocIdentifier("include")) {
             auto next = parser.parseNext();
@@ -205,7 +218,7 @@ int main(int argc, char** argv) {
                             (uxs::find_if(ctx.included_files, uxs::is_equal_to(file_path)).second ||
                              uxs::find(ctx.indirectly_included_files, file_path).second)) {
                             skipLine(parser, token, output);
-                            return;
+                            return false;
                         }
                         ctx.included_files.emplace_back(std::move(file_path), token.line);
                     }
@@ -213,10 +226,12 @@ int main(int argc, char** argv) {
             }
             parser.revert(next);
         }
+
         output.append(token.text);
+        return false;
     };
 
-    full_text = processText(input_file_name, full_text, params, fn);
+    full_text = processText(input_file_name, full_text, ctx, fn);
 
     if (params.fix_file_ending) { full_text.push_back('\n'); }
 
