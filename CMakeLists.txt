@@ -24,7 +24,13 @@ else()
   endif()
 endif()
 
-file(READ "VERSION" VERSION)
+file(READ VERSION VERSION)
+if(VERSION STREQUAL "")
+  message(FATAL_ERROR "Failed to detect version")
+else()
+  message("Build version ${VERSION}")
+endif()
+
 add_compile_definitions(VERSION=${VERSION})
 
 # ##############################################################################

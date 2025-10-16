@@ -14,14 +14,15 @@ struct FormattingParameters {
     bool fix_id_naming = false;
     bool fix_pragma_once = false;
     bool remove_already_included = false;
+    std::vector<std::string> definitions;
     std::vector<std::pair<std::filesystem::path, IncludePathType>> include_dirs;
 };
 
 struct FormattingContext {
     std::vector<std::string> definitions;
     std::vector<std::filesystem::path> path_stack;
-    std::vector<std::pair<std::filesystem::path, int>> included_files;
     std::set<std::filesystem::path> once_included_files;
+    std::vector<std::pair<std::filesystem::path, int>> included_files;
     std::set<std::filesystem::path> indirectly_included_files;
 };
 
