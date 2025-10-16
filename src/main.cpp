@@ -100,7 +100,6 @@ int main(int argc, char** argv) {
     bool show_help = false, show_version = false;
     std::string input_file_name, output_file_name;
 
-    FormattingContext ctx;
     FormattingParameters params;
 
     auto cli =
@@ -118,7 +117,7 @@ int main(int argc, char** argv) {
         << uxs::cli::option({"--fix-pragma-once"}).set(params.fix_pragma_once) % "Fix pragma once preproc command."
         << uxs::cli::option({"--remove-already-included"}).set(params.remove_already_included) %
                "Remove include directives for already included headers."
-        << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", ctx.definitions)) % "Add definition."
+        << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) % "Add definition."
         << (uxs::cli::option({"-I"}) & uxs::cli::basic_value_wrapper<char>("<dirs>...",
                                                                            [&params](std::string_view dir) {
                                                                                params.include_dirs.emplace_back(
@@ -179,13 +178,18 @@ int main(int argc, char** argv) {
 
     uxs::println("Processing: {}...", input_file_name);
 
+    FormattingContext ctx;
     std::string src_full_text = full_text;
 
     ctx.path_stack.emplace_back((std::filesystem::current_path() / input_file_name).lexically_normal());
 
-    if (params.remove_already_included) { collectIndirectlyIncludedFiles(input_file_name, params, ctx); }
+    if (params.remove_already_included) {
+        ctx.definitions = params.definitions;
+        collectIndirectlyIncludedFiles(input_file_name, params, ctx);
+    }
 
     if (params.fix_id_naming) {
+        ctx.definitions = params.definitions;
         full_text = processText(input_file_name, full_text, ctx,
                                 [&params](Parser& parser, const Parser::Token& token, unsigned, std::string& output) {
                                     fixIdNaming(parser, token, params, output);
@@ -231,6 +235,7 @@ int main(int argc, char** argv) {
         return false;
     };
 
+    ctx.definitions = params.definitions;
     full_text = processText(input_file_name, full_text, ctx, fn);
 
     if (params.fix_file_ending) { full_text.push_back('\n'); }
