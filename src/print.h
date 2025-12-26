@@ -1,7 +1,7 @@
 #pragma once
 
-#include "uxs/format.h"
-#include "uxs/format_fs.h"  // NOLINT
+#include <uxs/format.h>
+#include <uxs/format_fs.h>  // NOLINT
 
 extern unsigned g_debug_level;
 

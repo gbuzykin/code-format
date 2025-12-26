@@ -2,7 +2,7 @@
 
 #include "print.h"
 
-#include "uxs/string_alg.h"
+#include <uxs/string_alg.h>
 
 std::string processText(std::string file_name, std::span<const char> text, FormattingContext& ctx, const TokenFunc& fn,
                         TextProcFlags flags) {
@@ -101,7 +101,8 @@ void skipLine(Parser& parser, const Parser::Token& first_tkn, std::string& outpu
     }
 }
 
-void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingParameters& params, std::string& output) {
+void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingParameters& /*params*/,
+                 std::string& output) {
     if (token.type != Parser::TokenType::kIdentifier) {
         output.append(token.text);
         return;

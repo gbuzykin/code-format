@@ -1,8 +1,8 @@
 #include "formatters.h"
 #include "print.h"
 
-#include "uxs/cli/parser.h"
-#include "uxs/io/filebuf.h"
+#include <uxs/cli/parser.h>
+#include <uxs/io/filebuf.h>
 
 #define XSTR(s) STR(s)
 #define STR(s)  #s
@@ -102,41 +102,40 @@ int main(int argc, char** argv) {
 
     FormattingParameters params;
 
-    auto cli =
-        uxs::cli::command(argv[0])
-        << uxs::cli::overview(
-               "This is a tool for enclosing single statements in braces (and other cosmetic fixes) in C and C++ code")
-        << uxs::cli::value("file", input_file_name)
-        << (uxs::cli::option({"-o"}) & uxs::cli::value("<file>", output_file_name)) % "Output file name."
-        << uxs::cli::option({"--fix-file-ending"}).set(params.fix_file_ending) %
-               "Change file ending to one new-line symbol."
-        << uxs::cli::option({"--fix-single-statement"}).set(params.fix_single_statement) %
-               "Enclose single-statement blocks in brackets,\n"
-               "format `if`-`else if`-`else`-sequences."
-        << uxs::cli::option({"--fix-id-naming"}).set(params.fix_id_naming) % "Fix identifier naming."
-        << uxs::cli::option({"--fix-pragma-once"}).set(params.fix_pragma_once) % "Fix pragma once preproc command."
-        << uxs::cli::option({"--remove-already-included"}).set(params.remove_already_included) %
-               "Remove include directives for already included headers."
-        << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) % "Add definition."
-        << (uxs::cli::option({"-I"}) & uxs::cli::basic_value_wrapper<char>("<dirs>...",
-                                                                           [&params](std::string_view dir) {
-                                                                               params.include_dirs.emplace_back(
-                                                                                   dir, IncludePathType::kCustom);
-                                                                               return true;
-                                                                           })
-                                           .multiple()) %
-               "Add include directory."
-        << (uxs::cli::option({"-IS"}) & uxs::cli::basic_value_wrapper<char>("<dirs>...",
-                                                                            [&params](std::string_view dir) {
-                                                                                params.include_dirs.emplace_back(
-                                                                                    dir, IncludePathType::kSystem);
-                                                                                return true;
-                                                                            })
-                                            .multiple()) %
-               "Add system include directory."
-        << (uxs::cli::option({"-d"}) & uxs::cli::value("<debug level>", g_debug_level)) % "Debug level."
-        << uxs::cli::option({"-h", "--help"}).set(show_help) % "Display this information."
-        << uxs::cli::option({"-V", "--version"}).set(show_version) % "Display version.";
+    auto cli = uxs::cli::command(argv[0])
+               << uxs::cli::overview("This is a tool to automate cosmetic fixes in C and C++ code")
+               << uxs::cli::value("file", input_file_name)
+               << (uxs::cli::option({"-o"}) & uxs::cli::value("<file>", output_file_name)) % "Output file name."
+               << uxs::cli::option({"--fix-file-ending"}).set(params.fix_file_ending) %
+                      "Change file ending to one new-line symbol."
+               << uxs::cli::option({"--fix-single-statement"}).set(params.fix_single_statement) %
+                      "Enclose single-statement blocks in brackets,\n"
+                      "format `if`-`else if`-`else`-sequences."
+               << uxs::cli::option({"--fix-id-naming"}).set(params.fix_id_naming) % "Fix identifier naming."
+               << uxs::cli::option({"--fix-pragma-once"}).set(params.fix_pragma_once) %
+                      "Fix pragma once preproc command."
+               << uxs::cli::option({"--remove-already-included"}).set(params.remove_already_included) %
+                      "Remove include directives for already included headers."
+               << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) % "Add definition."
+               << (uxs::cli::option({"-I"}) & uxs::cli::basic_value_wrapper<char>(
+                                                  "<dirs>...",
+                                                  [&params](std::string_view dir) {
+                                                      params.include_dirs.emplace_back(dir, IncludePathType::kCustom);
+                                                      return true;
+                                                  })
+                                                  .multiple()) %
+                      "Add include directory."
+               << (uxs::cli::option({"-IS"}) & uxs::cli::basic_value_wrapper<char>(
+                                                   "<dirs>...",
+                                                   [&params](std::string_view dir) {
+                                                       params.include_dirs.emplace_back(dir, IncludePathType::kSystem);
+                                                       return true;
+                                                   })
+                                                   .multiple()) %
+                      "Add system include directory."
+               << (uxs::cli::option({"-d"}) & uxs::cli::value("<debug level>", g_debug_level)) % "Debug level."
+               << uxs::cli::option({"-h", "--help"}).set(show_help) % "Display this information."
+               << uxs::cli::option({"-V", "--version"}).set(show_version) % "Display version.";
 
     auto parse_result = cli->parse(argc, argv);
     if (show_help) {

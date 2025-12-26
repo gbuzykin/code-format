@@ -1,7 +1,7 @@
 #pragma once
 
-#include "uxs/algorithm.h"
-#include "uxs/string_cvt.h"
+#include <uxs/algorithm.h>
+#include <uxs/string_cvt.h>
 
 #include <span>
 #include <vector>
