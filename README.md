@@ -5,12 +5,11 @@ This is a tool for enclosing single statements in braces (and other cosmetic fix
 ## Command Line Options
 
 ```bash
-$ ./code-format --help
-OVERVIEW: This is a tool for enclosing single statements in braces (and other cosmetic fixes) in C and C++ code
-USAGE: code-format.exe file [-o <file>] [--fix-file-ending]
-           [--fix-single-statement] [--fix-id-naming] [--fix-pragma-once]
-           [--remove-already-included] [-D <defs>...] [-I <dirs>...] [-IS <dirs>...]
-           [-d <debug level>] [-h] [-V]
+$ ./install/bin/code-format --help
+OVERVIEW: This is a tool to automate cosmetic fixes in C and C++ code
+USAGE: ./install/bin/code-format file [-o <file>] [--fix-file-ending] [--fix-single-statement]
+           [--fix-id-naming] [--fix-pragma-once] [--remove-already-included] [-D <defs>...]
+           [-I <dirs>...] [-IS <dirs>...] [-d <debug level>] [-h] [-V]
 OPTIONS: 
     -o <file>                 Output file name.
     --fix-file-ending         Change file ending to one new-line symbol.
@@ -30,49 +29,43 @@ OPTIONS:
 
 ## How to Build `code-format`
 
-Perform these steps to build the project (in linux, for other platforms the steps are similar):
+Perform these steps to build the project:
 
 1. Clone `code-format` repository and enter it
 
     ```bash
-    git clone https://github.com/gbuzykin/code-format
-    cd code-format
+    $ git clone https://github.com/gbuzykin/code-format.git
+    $ cd code-format
     ```
 
 2. Initialize and update `uxs` submodule
 
     ```bash
-    git submodule update --init
+    $ git submodule update --init
     ```
 
-3. Then, compilation script should be created using `cmake` tool.  To use the default C++ compiler
-   just issue (for new enough version of `cmake`)
+3. Create compilation script using `cmake` tool
 
     ```bash
-    cmake -S . -B build
+    $ cmake --preset default
+    ```
+   
+    Default C++ compiler will be used.
+
+4. Build `code-format`
+
+    ```bash
+    $ cmake --build build --config Release
     ```
 
-    or to make building scripts for debug or optimized configurations issue the following
+    To run several parallel processes (e.g. 8) for building use `-j` key
 
     ```bash
-    cmake -S . -B build -DCMAKE_BUILD_TYPE="Debug"
+    $ cmake --build build --config Release -j 8
     ```
 
-    or
+5. Install `code-format`
 
     ```bash
-    cmake -S . -B build -DCMAKE_BUILD_TYPE="Release"
-    ```
-
-4. Enter created folder `build` and run `make`
-
-    ```bash
-    cd build
-    make
-    ```
-
-    to use several parallel processes (e.g. 8) for building run `make` with `-j` key
-
-    ```bash
-    make -j 8
+    $ cmake --install build --config Release --prefix <install-dir>
     ```

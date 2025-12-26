@@ -101,7 +101,8 @@ void skipLine(Parser& parser, const Parser::Token& first_tkn, std::string& outpu
     }
 }
 
-void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingParameters& params, std::string& output) {
+void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingParameters& /*params*/,
+                 std::string& output) {
     if (token.type != Parser::TokenType::kIdentifier) {
         output.append(token.text);
         return;
