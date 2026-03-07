@@ -2,8 +2,14 @@
 
 #include <uxs/algorithm.h>
 #include <uxs/string_cvt.h>
+#include <uxs/utility.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <span>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace lex_detail {

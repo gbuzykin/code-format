@@ -3,9 +3,9 @@
 #include "parser.h"
 
 #include <filesystem>
+#include <functional>
 #include <set>
 
-enum class IncludePathType { kCustom = 0, kSystem };
 enum class IncludeBrackets { kDoubleQuotes = 0, kAngled };
 
 struct FormattingParameters {
@@ -15,7 +15,7 @@ struct FormattingParameters {
     bool fix_pragma_once = false;
     bool remove_already_included = false;
     std::vector<std::string> definitions;
-    std::vector<std::pair<std::filesystem::path, IncludePathType>> include_dirs;
+    std::vector<std::filesystem::path> include_dirs;
 };
 
 struct FormattingContext {
