@@ -9,28 +9,25 @@
 
 namespace {
 
-std::pair<std::filesystem::path, IncludePathType> findIncludePath(const std::filesystem::path& path,
-                                                                  IncludeBrackets brackets,
-                                                                  const FormattingParameters& params,
-                                                                  const FormattingContext& ctx) {
+std::filesystem::path findIncludePath(const std::filesystem::path& path, IncludeBrackets brackets,
+                                      const FormattingParameters& params, const FormattingContext& ctx) {
     if (path.empty()) { return {}; }
     if (path.is_absolute()) {
-        if (std::filesystem::exists(path)) { return std::make_pair(path.lexically_normal(), IncludePathType::kCustom); }
+        if (std::filesystem::exists(path)) { return path.lexically_normal(); }
         return {};
     }
     if (brackets == IncludeBrackets::kDoubleQuotes) {
         for (const auto& dir : uxs::make_reverse_range(ctx.path_stack)) {
             auto path_cat = dir.parent_path() / path;
             if (std::filesystem::exists(path_cat)) {
-                return std::make_pair((std::filesystem::current_path() / path_cat).lexically_normal(),
-                                      IncludePathType::kCustom);
+                return (std::filesystem::current_path() / path_cat).lexically_normal();
             }
         }
     }
-    for (const auto& [dir, dir_type] : params.include_dirs) {
+    for (const auto& dir : params.include_dirs) {
         auto path_cat = dir / path;
         if (std::filesystem::exists(path_cat)) {
-            return std::make_pair((std::filesystem::current_path() / path_cat).lexically_normal(), dir_type);
+            return (std::filesystem::current_path() / path_cat).lexically_normal();
         }
     }
     return {};
@@ -67,9 +64,9 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
         auto next = parser.parseNext();
         if (next.type == Parser::TokenType::kPreprocBody) {
             auto [file_name, brackets] = extractIncludePath(next.getTrimmedText());
-            auto [file_path, path_type] = findIncludePath(file_name, brackets, params, ctx);
+            auto file_path = findIncludePath(file_name, brackets, params, ctx);
             if (!file_path.empty()) {
-                if (path_type == IncludePathType::kCustom) {
+                if (brackets == IncludeBrackets::kDoubleQuotes) {
                     ctx.path_stack.emplace_back(file_path);
                     if (!collectIndirectlyIncludedFiles(file_name, params, ctx)) {
                         printWarning("{}:{}: could not open include file `{}`", parser.getFileName(), parser.getLn(),
@@ -117,22 +114,14 @@ int main(int argc, char** argv) {
                << uxs::cli::option({"--remove-already-included"}).set(params.remove_already_included) %
                       "Remove include directives for already included headers."
                << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) % "Add definition."
-               << (uxs::cli::option({"-I"}) & uxs::cli::basic_value_wrapper<char>(
-                                                  "<dirs>...",
-                                                  [&params](std::string_view dir) {
-                                                      params.include_dirs.emplace_back(dir, IncludePathType::kCustom);
-                                                      return true;
-                                                  })
-                                                  .multiple()) %
+               << (uxs::cli::option({"-I"}) &
+                   uxs::cli::basic_value_wrapper<char>("<dirs>...",
+                                                       [&params](std::string_view dir) {
+                                                           params.include_dirs.emplace_back(dir);
+                                                           return true;
+                                                       })
+                       .multiple()) %
                       "Add include directory."
-               << (uxs::cli::option({"-IS"}) & uxs::cli::basic_value_wrapper<char>(
-                                                   "<dirs>...",
-                                                   [&params](std::string_view dir) {
-                                                       params.include_dirs.emplace_back(dir, IncludePathType::kSystem);
-                                                       return true;
-                                                   })
-                                                   .multiple()) %
-                      "Add system include directory."
                << (uxs::cli::option({"-d"}) & uxs::cli::value("<debug level>", g_debug_level)) % "Debug level."
                << uxs::cli::option({"-h", "--help"}).set(show_help) % "Display this information."
                << uxs::cli::option({"-V", "--version"}).set(show_version) % "Display version.";
@@ -215,7 +204,7 @@ int main(int argc, char** argv) {
             if (next.type == Parser::TokenType::kPreprocBody) {
                 if (!skip_level) {
                     auto [file_name, brackets] = extractIncludePath(next.getTrimmedText());
-                    auto [file_path, path_type] = findIncludePath(file_name, brackets, params, ctx);
+                    auto file_path = findIncludePath(file_name, brackets, params, ctx);
                     if (!file_path.empty()) {
                         if (params.remove_already_included &&
                             (uxs::find_if(ctx.included_files, uxs::is_equal_to(file_path)).second ||
