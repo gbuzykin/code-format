@@ -1,5 +1,7 @@
 #include "parser.h"
 
+#include <uxs/chars.h>
+
 namespace lex_detail {
 #include "lex_analyzer.inl"
 }
