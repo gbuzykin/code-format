@@ -26,6 +26,7 @@ string      {string1}|{string2}
 id          {id}
 int         {int}|{int_hex}
 real        {real}
+ns_sep      "::"
 preproc     <at_beg_of_line> #{ws}*{id}
 ws          {ws}+
 eol         \n

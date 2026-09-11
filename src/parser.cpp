@@ -14,7 +14,7 @@ std::size_t countWs(std::string_view text) {
     for (; count != text.size(); ++count) {
         if (text[count] == '\\' && count + 1 != text.size() && text[count + 1] == '\n') {
             ++count;
-        } else if (!uxs::is_space(text[count])) {
+        } else if (!uxs::is_space{}(text[count])) {
             break;
         }
     }
@@ -47,7 +47,7 @@ Parser::Token Parser::parseNext() {
             lex_state_stack_.setsize(sptr - lex_state_stack_.data());
             if (pat >= lex_detail::predef_pat_default || last == last_) { break; }
             // enlarge state stack and continue analysis
-            lex_state_stack_.reserve(llen);
+            lex_state_stack_.reserve(lex_state_stack_.size() + llen);
             first = last;
         }
         first_ += llen;
@@ -59,6 +59,7 @@ Parser::Token Parser::parseNext() {
                 case lex_detail::pat_id: token.type = TokenType::kIdentifier; break;
                 case lex_detail::pat_int: token.type = TokenType::kInteger; break;
                 case lex_detail::pat_real: token.type = TokenType::kReal; break;
+                case lex_detail::pat_ns_sep: token.type = TokenType::kNsSep; break;
                 case lex_detail::pat_preproc_body: {
                     token.type = TokenType::kPreprocBody;
                     lex_state_stack_.back() = lex_detail::sc_initial;
@@ -94,13 +95,13 @@ Parser::Token Parser::parseNext() {
 
 std::string_view Parser::Token::getPreprocIdentifier() const {
     return std::string_view(
-        std::find_if(text.begin() + ws_count, text.end(), [](char ch) { return uxs::is_alpha(ch) || ch == '_'; }),
+        std::find_if(text.begin() + ws_count, text.end(), [](char ch) { return uxs::is_alpha{}(ch) || ch == '_'; }),
         text.end());
 }
 
 std::string_view Parser::Token::getFirstIdentifier() const {
     auto first = text.begin() + ws_count;
-    if (first == text.end() || (!uxs::is_alpha(*first) && *first != '_')) { return {}; }
-    auto last = std::find_if(first + 1, text.end(), [](char ch) { return !uxs::is_alnum(ch) && ch != '_'; });
+    if (first == text.end() || (!uxs::is_alpha{}(*first) && *first != '_')) { return {}; }
+    auto last = std::find_if(first + 1, text.end(), [](char ch) { return !uxs::is_alnum{}(ch) && ch != '_'; });
     return std::string_view(first, last);
 }

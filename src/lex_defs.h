@@ -15,6 +15,7 @@ enum {
     pat_id,
     pat_int,
     pat_real,
+    pat_ns_sep,
     pat_preproc,
     pat_ws,
     pat_eol,

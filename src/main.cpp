@@ -1,3 +1,4 @@
+#include "decl_scanner.h"
 #include "formatters.h"
 #include "print.h"
 
@@ -17,7 +18,7 @@ std::filesystem::path findIncludePath(const std::filesystem::path& path, Include
         return {};
     }
     if (brackets == IncludeBrackets::kDoubleQuotes) {
-        for (const auto& dir : uxs::make_reverse_range(ctx.path_stack)) {
+        for (const auto& dir : est::make_reverse_range(ctx.path_stack)) {
             auto path_cat = dir.parent_path() / path;
             if (std::filesystem::exists(path_cat)) {
                 return (std::filesystem::current_path() / path_cat).lexically_normal();
@@ -33,17 +34,21 @@ std::filesystem::path findIncludePath(const std::filesystem::path& path, Include
     return {};
 }
 
-bool collectIndirectlyIncludedFiles(std::string_view file_name, const FormattingParameters& params,
-                                    FormattingContext& ctx) {
-    std::string text;
-    if (uxs::filebuf ifile(ctx.path_stack.back().c_str(), "r"); ifile) {
+bool loadTextFile(const std::string& file_name, std::string& text) {
+    if (uxs::filebuf ifile(file_name.c_str(), "r"); ifile) {
         std::size_t file_sz = static_cast<std::size_t>(ifile.seek(0, uxs::seekdir::end));
         text.resize(file_sz);
         ifile.seek(0);
         text.resize(ifile.read(text));
-    } else {
-        return false;
+        return true;
     }
+    return false;
+}
+
+bool collectIndirectlyIncludedFiles(std::string_view file_name, const FormattingParameters& params,
+                                    FormattingContext& ctx) {
+    std::string text;
+    if (!loadTextFile(ctx.path_stack.back(), text)) { return false; }
 
     auto fn = [&params, &ctx](Parser& parser, const Parser::Token& token, unsigned skip_level, std::string&) {
         if (skip_level) { return false; }
@@ -95,13 +100,14 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
 
 int main(int argc, char** argv) {
     bool show_help = false, show_version = false;
-    std::string input_file_name, output_file_name;
+    std::vector<std::string> input_file_names;
+    std::string output_file_name;
 
     FormattingParameters params;
 
     auto cli = uxs::cli::command(argv[0])
                << uxs::cli::overview("This is a tool to automate cosmetic fixes in C and C++ code")
-               << uxs::cli::value("file", input_file_name)
+               << uxs::cli::values("<files>", input_file_names)
                << (uxs::cli::option({"-o"}) & uxs::cli::value("<file>", output_file_name)) % "Output file name."
                << uxs::cli::option({"--fix-file-ending"}).set(params.fix_file_ending) %
                       "Change file ending to one new-line symbol."
@@ -113,6 +119,8 @@ int main(int argc, char** argv) {
                       "Fix pragma once preproc command."
                << uxs::cli::option({"--remove-already-included"}).set(params.remove_already_included) %
                       "Remove include directives for already included headers."
+               << uxs::cli::option({"--list-all-declarations"}).set(params.list_all_declarations) %
+                      "List all file declarations."
                << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) % "Add definition."
                << (uxs::cli::option({"-I"}) &
                    uxs::cli::basic_value_wrapper<char>("<dirs>...",
@@ -145,21 +153,50 @@ int main(int argc, char** argv) {
                     printError("expected command line argument after `{}`", argv[parse_result.argc_parsed - 1]);
                 }
             } break;
-            case uxs::cli::parsing_status::unspecified_value: {
-                if (input_file_name.empty()) { printError("no input file specified"); }
-            } break;
             default: break;
         }
         return -1;
     }
 
+    if (input_file_names.empty()) {
+        printError("no input file specified");
+        return -1;
+    }
+
+    if (params.list_all_declarations) {
+        Namespace root;
+
+        for (const auto& input_file_name : input_file_names) {
+            std::string full_text;
+            if (!loadTextFile(input_file_name, full_text)) {
+                printError("could not open input file `{}`", input_file_name);
+                return -1;
+            }
+
+            uxs::println("Processing: {}...", input_file_name);
+
+            Parser parser(input_file_name, full_text);
+            if (!scanForDeclarations(parser, root)) {
+                printError("error scanning file `{}`", input_file_name);
+                return -1;
+            }
+        }
+
+        const auto decl_list = makeConflictedDeclarationList(root);
+
+        if (uxs::filebuf ofile(output_file_name.c_str(), "w"); ofile) {
+            printDeclarationList(ofile, decl_list);
+        } else {
+            printError("could not open output file `{}`", output_file_name);
+            return -1;
+        }
+        return 0;
+    }
+
+    std::string input_file_name = input_file_names[0];
+
     std::string full_text;
-    if (uxs::filebuf ifile(input_file_name.c_str(), "r"); ifile) {
-        std::size_t file_sz = static_cast<std::size_t>(ifile.seek(0, uxs::seekdir::end));
-        full_text.resize(file_sz);
-        ifile.seek(0);
-        full_text.resize(ifile.read(full_text));
-    } else {
+    if (!loadTextFile(input_file_name, full_text)) {
         printError("could not open input file `{}`", input_file_name);
         return -1;
     }
@@ -207,8 +244,10 @@ int main(int argc, char** argv) {
                     auto file_path = findIncludePath(file_name, brackets, params, ctx);
                     if (!file_path.empty()) {
                         if (params.remove_already_included &&
-                            (uxs::find_if(ctx.included_files, uxs::is_equal_to(file_path)).second ||
-                             uxs::find(ctx.indirectly_included_files, file_path).second)) {
+                            (std::ranges::any_of(ctx.included_files,
+                                                 [&file_path](auto&& v) { return v.first == file_path; }) ||
+                             std::ranges::any_of(ctx.indirectly_included_files,
+                                                 [&file_path](auto&& v) { return v == file_path; }))) {
                             skipLine(parser, token, output);
                             return false;
                         }

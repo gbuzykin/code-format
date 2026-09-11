@@ -2,7 +2,9 @@
 
 #include "print.h"
 
-#include <uxs/string_alg.h>
+#include <uxs/string_util.h>
+
+#include <array>
 
 std::string processText(std::string file_name, std::span<const char> text, FormattingContext& ctx, const TokenFunc& fn,
                         TextProcFlags flags) {
@@ -66,6 +68,26 @@ std::string processText(std::string file_name, std::span<const char> text, Forma
     return output;
 }
 
+std::string decodeStringEscapes(std::string_view s, std::string_view symb, std::string_view code) {
+    std::string result;
+    result.reserve(s.size());
+    auto p0 = s.begin();
+    auto p = p0;
+    for (; p != s.end(); ++p) {
+        if (*p != '\\') { continue; }
+        result += uxs::to_string_view(p0, p);
+        p0 = p + 1;
+        if (++p == s.end()) { break; }
+        auto pos = code.find(*p);
+        if (pos != std::string_view::npos) {
+            result += symb[pos];
+            p0 = p + 1;
+        }
+    }
+    result += uxs::to_string_view(p0, p);
+    return result;
+}
+
 std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text) {
     if (text.size() < 2) { return {}; }
     IncludeBrackets brackets = IncludeBrackets::kDoubleQuotes;
@@ -87,7 +109,7 @@ std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text
     } else {
         return {};
     }
-    return std::make_pair(uxs::decode_escapes(text, "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\""), brackets);
+    return std::make_pair(decodeStringEscapes(text, "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\""), brackets);
 }
 
 void skipLine(Parser& parser, const Parser::Token& first_tkn, std::string& output) {
@@ -115,11 +137,12 @@ void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingPar
     if (!next.isSymbol('(')) {
         if (id.size() > 1 &&
             (id[0] == '_' ||
-             (!uxs::is_upper(id[0]) && !(id[0] == 'k' && uxs::is_upper(id[1])) /* Probably enum member */ &&
-              !uxs::all_of(
-                  id, [](char ch) { return ch == '_' || uxs::is_digit(ch) || uxs::is_lower(ch); }) /* No upper case */
-              && !uxs::all_of(id, [](char ch) {
-                     return ch == '_' || uxs::is_digit(ch) || uxs::is_upper(ch);
+             (!uxs::is_upper{}(id[0]) && !(id[0] == 'k' && uxs::is_upper{}(id[1])) /* Probably enum member */ &&
+              !std::ranges::all_of(
+                  id,
+                  [](char ch) { return ch == '_' || uxs::is_digit{}(ch) || uxs::is_lower{}(ch); }) /* No upper case */
+              && !std::ranges::all_of(id, [](char ch) {
+                     return ch == '_' || uxs::is_digit{}(ch) || uxs::is_upper{}(ch);
                  }) /* No lower case */))) {
             new_id.clear();
             bool is_member = false;
@@ -129,8 +152,10 @@ void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingPar
             }
             new_id.push_back(id[0]);
             for (auto it = id.begin() + 1; it != id.end(); ++it) {
-                if ((uxs::is_digit(*it) || uxs::is_upper(*it)) && uxs::is_lower(*(it - 1))) { new_id.push_back('_'); }
-                new_id.push_back(uxs::to_lower(*it));
+                if ((uxs::is_digit{}(*it) || uxs::is_upper{}(*it)) && uxs::is_lower{}(*(it - 1))) {
+                    new_id.push_back('_');
+                }
+                new_id.push_back(uxs::to_lower{}(*it));
             }
             if (is_member) { new_id.push_back('_'); }
         }
