@@ -14,6 +14,7 @@ struct FormattingParameters {
     bool fix_id_naming = false;
     bool fix_pragma_once = false;
     bool remove_already_included = false;
+    bool list_all_declarations = false;
     std::vector<std::string> definitions;
     std::vector<std::filesystem::path> include_dirs;
 };

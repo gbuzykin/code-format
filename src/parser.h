@@ -24,6 +24,7 @@ class Parser {
     enum class TokenType {
         kEof = 0,
         kSymbol,
+        kNsSep,
         kIdentifier,
         kString,
         kInteger,
@@ -43,6 +44,9 @@ class Parser {
         bool isFirstSignificant() const { return is_first_significant; }
         bool isEof() const { return type == TokenType::kEof; }
         bool isSymbol(char ch) const { return type == TokenType::kSymbol && text[ws_count] == ch; }
+        bool isAnyOfSymbols(std::string_view chs) const {
+            return type == TokenType::kSymbol && chs.find(text[ws_count]) != std::string::npos;
+        }
         bool isComment() const { return type == TokenType::kComment; }
         bool isIdentifier(std::string_view id) const {
             return type == TokenType::kIdentifier && getTrimmedText() == id;
@@ -106,11 +110,11 @@ class Parser {
     unsigned line_ = 1, pos_ = 1;
     const char* first_ = nullptr;
     const char* last_ = nullptr;
-    uxs::inline_basic_dynbuffer<int, 1> lex_state_stack_;
+    uxs::basic_dynbuffer<int> lex_state_stack_;
     std::vector<Token> revert_stack_;
 
     void trackPosition(std::string_view s) {
-        uxs::for_each(s, [this](char ch) {
+        std::ranges::for_each(s, [this](char ch) {
             if (ch == '\n') { ++line_, pos_ = 0; }
             ++pos_;
         });

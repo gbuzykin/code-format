@@ -7,9 +7,9 @@ This is a tool for enclosing single statements in braces (and other cosmetic fix
 ```bash
 $ ./install/bin/code-format --help
 OVERVIEW: This is a tool to automate cosmetic fixes in C and C++ code
-USAGE: ./install/bin/code-format file [-o <file>] [--fix-file-ending] [--fix-single-statement]
-           [--fix-id-naming] [--fix-pragma-once] [--remove-already-included] [-D <defs>...]
-           [-I <dirs>...] [-d <debug level>] [-h] [-V]
+USAGE: ./install/bin/code-format <files> [-o <file>] [--fix-file-ending] [--fix-single-statement]
+           [--fix-id-naming] [--fix-pragma-once] [--remove-already-included]
+           [--list-all-declarations] [-D <defs>...] [-I <dirs>...] [-d <debug level>] [-h] [-V]
 OPTIONS: 
     -o <file>                 Output file name.
     --fix-file-ending         Change file ending to one new-line symbol.
@@ -19,6 +19,7 @@ OPTIONS:
     --fix-pragma-once         Fix pragma once preproc command.
     --remove-already-included
                               Remove include directives for already included headers.
+    --list-all-declarations   List all file declarations.
     -D <defs>...              Add definition.
     -I <dirs>...              Add include directory.
     -d <debug level>          Debug level.
