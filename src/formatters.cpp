@@ -2,13 +2,9 @@
 
 #include "print.h"
 
-#include <uxs/string_util.h>
-
-#include <array>
-
-std::string processText(std::string file_name, std::span<const char> text, FormattingContext& ctx, const TokenFunc& fn,
-                        TextProcFlags flags) {
-    Parser parser(std::move(file_name), text, flags);
+std::string processText(std::filesystem::path file_path, std::span<const char> text, FormattingContext& ctx,
+                        const TokenFunc& fn, TextProcFlags flags) {
+    Parser parser(std::move(file_path), text, flags);
     Parser::Token token;
     std::string output;
 
@@ -88,7 +84,7 @@ std::string decodeStringEscapes(std::string_view s, std::string_view symb, std::
     return result;
 }
 
-std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text) {
+std::pair<std::filesystem::path, IncludeBrackets> extractIncludePath(std::string_view text) {
     if (text.size() < 2) { return {}; }
     IncludeBrackets brackets = IncludeBrackets::kDoubleQuotes;
     if (text.front() == '<') {
@@ -109,7 +105,8 @@ std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text
     } else {
         return {};
     }
-    return std::make_pair(decodeStringEscapes(text, "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\""), brackets);
+    return std::make_pair(
+        uxs::utf_native_path_adapter{}(decodeStringEscapes(text, "\a\b\f\n\r\t\v\\\"", "abfnrtv\\\"")), brackets);
 }
 
 void skipLine(Parser& parser, const Parser::Token& first_tkn, std::string& output) {
@@ -172,10 +169,10 @@ void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingPar
 }
 
 bool fixPragmaOnce(Parser& parser, const Parser::Token& first_tkn, std::string& output) {
-    std::string_view ext{parser.getFileName()};
-    auto dot_pos = ext.rfind('.');
-    ext = dot_pos != std::string::npos ? ext.substr(dot_pos + 1) : std::string_view{};
-    bool is_header = ext.starts_with('h');
+    const auto ext = parser.getFileName().extension();
+    constexpr std::string_view header_ext(".h");
+    bool is_header = ext.native().size() >= header_ext.size() &&
+                     std::equal(ext.native().begin(), ext.native().begin() + header_ext.size(), header_ext.begin());
 
     auto next = parser.parseNext();
 

@@ -11,7 +11,7 @@ enum class DeclType { kFunction = 0, kClass, kStruct, kUnion, kEnum };
 
 struct DeclInfo {
     DeclType type;
-    std::string file_name;
+    std::filesystem::path file_path;
     unsigned line;
 };
 

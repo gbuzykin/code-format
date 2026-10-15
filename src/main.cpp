@@ -34,8 +34,8 @@ std::filesystem::path findIncludePath(const std::filesystem::path& path, Include
     return {};
 }
 
-bool loadTextFile(const std::string& file_name, std::string& text) {
-    if (uxs::filebuf ifile(file_name.c_str(), "r"); ifile) {
+bool loadTextFile(const std::filesystem::path& file_path, std::string& text) {
+    if (uxs::filebuf ifile(file_path.c_str(), "r"); ifile) {
         std::size_t file_sz = static_cast<std::size_t>(ifile.seek(0, uxs::seekdir::end));
         text.resize(file_sz);
         ifile.seek(0);
@@ -45,7 +45,7 @@ bool loadTextFile(const std::string& file_name, std::string& text) {
     return false;
 }
 
-bool collectIndirectlyIncludedFiles(std::string_view file_name, const FormattingParameters& params,
+bool collectIndirectlyIncludedFiles(const std::filesystem::path& file_path, const FormattingParameters& params,
                                     FormattingContext& ctx) {
     std::string text;
     if (!loadTextFile(ctx.path_stack.back(), text)) { return false; }
@@ -68,21 +68,21 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
 
         auto next = parser.parseNext();
         if (next.type == Parser::TokenType::kPreprocBody) {
-            auto [file_name, brackets] = extractIncludePath(next.getTrimmedText());
-            auto file_path = findIncludePath(file_name, brackets, params, ctx);
-            if (!file_path.empty()) {
+            auto [file_path, brackets] = extractIncludePath(next.getTrimmedText());
+            auto found_file_path = findIncludePath(file_path, brackets, params, ctx);
+            if (!found_file_path.empty()) {
                 if (brackets == IncludeBrackets::kDoubleQuotes) {
-                    ctx.path_stack.emplace_back(file_path);
-                    if (!collectIndirectlyIncludedFiles(file_name, params, ctx)) {
+                    ctx.path_stack.emplace_back(found_file_path);
+                    if (!collectIndirectlyIncludedFiles(file_path, params, ctx)) {
                         printWarning("{}:{}: could not open include file `{}`", parser.getFileName(), parser.getLn(),
-                                     file_name);
+                                     file_path);
                     }
                     ctx.path_stack.pop_back();
                 }
-                if (ctx.path_stack.size() > 1) { ctx.indirectly_included_files.emplace(std::move(file_path)); }
+                if (ctx.path_stack.size() > 1) { ctx.indirectly_included_files.emplace(std::move(found_file_path)); }
             } else {
                 printWarning("{}:{}: could not find included file `{}`", parser.getFileName(), parser.getLn(),
-                             file_name);
+                             file_path);
             }
         } else {
             parser.revert(next);
@@ -91,7 +91,7 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
         return false;
     };
 
-    processText(std::string{file_name}, text, ctx, fn);
+    processText(file_path, text, ctx, fn);
 
     return true;
 }
@@ -100,15 +100,21 @@ bool collectIndirectlyIncludedFiles(std::string_view file_name, const Formatting
 
 int main(int argc, char** argv) {
     bool show_help = false, show_version = false;
-    std::vector<std::string> input_file_names;
-    std::string output_file_name;
+    std::vector<std::filesystem::path> input_file_paths;
+    std::filesystem::path output_file_path;
 
     FormattingParameters params;
 
+    const auto string_to_path = [](const auto& sval, auto& v) {
+        v = uxs::utf_native_path_adapter{}(sval);
+        return true;
+    };
+
     auto cli = uxs::cli::command(argv[0])
                << uxs::cli::overview("This is a tool to automate cosmetic fixes in C and C++ code")
-               << uxs::cli::values("<files>", input_file_names)
-               << (uxs::cli::option({"-o"}) & uxs::cli::value("<file>", output_file_name)) % "Output file name."
+               << uxs::cli::values("<files>", input_file_paths, string_to_path)
+               << (uxs::cli::option({"-o"}) & uxs::cli::value("<file>", output_file_path, string_to_path)) %
+                      "Output file name."
                << uxs::cli::option({"--fix-file-ending"}).set(params.fix_file_ending) %
                       "Change file ending to one new-line symbol."
                << uxs::cli::option({"--fix-single-statement"}).set(params.fix_single_statement) %
@@ -122,13 +128,7 @@ int main(int argc, char** argv) {
                << uxs::cli::option({"--list-all-declarations"}).set(params.list_all_declarations) %
                       "List all file declarations."
                << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) % "Add definition."
-               << (uxs::cli::option({"-I"}) &
-                   uxs::cli::basic_value_wrapper<char>("<dirs>...",
-                                                       [&params](std::string_view dir) {
-                                                           params.include_dirs.emplace_back(dir);
-                                                           return true;
-                                                       })
-                       .multiple()) %
+               << (uxs::cli::option({"-I"}) & uxs::cli::values("<dirs>...", params.include_dirs, string_to_path)) %
                       "Add include directory."
                << (uxs::cli::option({"-d"}) & uxs::cli::value("<debug level>", g_debug_level)) % "Debug level."
                << uxs::cli::option({"-h", "--help"}).set(show_help) % "Display this information."
@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    if (input_file_names.empty()) {
+    if (input_file_paths.empty()) {
         printError("no input file specified");
         return -1;
     }
@@ -166,56 +166,56 @@ int main(int argc, char** argv) {
     if (params.list_all_declarations) {
         Namespace root;
 
-        for (const auto& input_file_name : input_file_names) {
+        for (const auto& input_file_path : input_file_paths) {
             std::string full_text;
-            if (!loadTextFile(input_file_name, full_text)) {
-                printError("could not open input file `{}`", input_file_name);
+            if (!loadTextFile(input_file_path, full_text)) {
+                printError("could not open input file `{}`", input_file_path);
                 return -1;
             }
 
-            uxs::println("Processing: {}...", input_file_name);
+            uxs::println("Processing: {}...", input_file_path);
 
-            Parser parser(input_file_name, full_text);
+            Parser parser(input_file_path, full_text);
             if (!scanForDeclarations(parser, root)) {
-                printError("error scanning file `{}`", input_file_name);
+                printError("error scanning file `{}`", input_file_path);
                 return -1;
             }
         }
 
         const auto decl_list = makeConflictedDeclarationList(root);
 
-        if (uxs::filebuf ofile(output_file_name.c_str(), "w"); ofile) {
+        if (uxs::filebuf ofile(output_file_path.c_str(), "w"); ofile) {
             printDeclarationList(ofile, decl_list);
         } else {
-            printError("could not open output file `{}`", output_file_name);
+            printError("could not open output file `{}`", output_file_path);
             return -1;
         }
         return 0;
     }
 
-    std::string input_file_name = input_file_names[0];
+    const auto input_file_path = input_file_paths[0];
 
     std::string full_text;
-    if (!loadTextFile(input_file_name, full_text)) {
-        printError("could not open input file `{}`", input_file_name);
+    if (!loadTextFile(input_file_path, full_text)) {
+        printError("could not open input file `{}`", input_file_path);
         return -1;
     }
 
-    uxs::println("Processing: {}...", input_file_name);
+    uxs::println("Processing: {}...", input_file_path);
 
     FormattingContext ctx;
     std::string src_full_text = full_text;
 
-    ctx.path_stack.emplace_back((std::filesystem::current_path() / input_file_name).lexically_normal());
+    ctx.path_stack.emplace_back((std::filesystem::current_path() / input_file_path).lexically_normal());
 
     if (params.remove_already_included) {
         ctx.definitions = params.definitions;
-        collectIndirectlyIncludedFiles(input_file_name, params, ctx);
+        collectIndirectlyIncludedFiles(input_file_path, params, ctx);
     }
 
     if (params.fix_id_naming) {
         ctx.definitions = params.definitions;
-        full_text = processText(input_file_name, full_text, ctx,
+        full_text = processText(input_file_path, full_text, ctx,
                                 [&params](Parser& parser, const Parser::Token& token, unsigned, std::string& output) {
                                     fixIdNaming(parser, token, params, output);
                                     return false;
@@ -240,18 +240,18 @@ int main(int argc, char** argv) {
             auto next = parser.parseNext();
             if (next.type == Parser::TokenType::kPreprocBody) {
                 if (!skip_level) {
-                    auto [file_name, brackets] = extractIncludePath(next.getTrimmedText());
-                    auto file_path = findIncludePath(file_name, brackets, params, ctx);
-                    if (!file_path.empty()) {
+                    auto [file_path, brackets] = extractIncludePath(next.getTrimmedText());
+                    auto found_file_path = findIncludePath(file_path, brackets, params, ctx);
+                    if (!found_file_path.empty()) {
                         if (params.remove_already_included &&
                             (std::ranges::any_of(ctx.included_files,
-                                                 [&file_path](auto&& v) { return v.first == file_path; }) ||
+                                                 [&found_file_path](auto&& v) { return v.first == found_file_path; }) ||
                              std::ranges::any_of(ctx.indirectly_included_files,
-                                                 [&file_path](auto&& v) { return v == file_path; }))) {
+                                                 [&found_file_path](auto&& v) { return v == found_file_path; }))) {
                             skipLine(parser, token, output);
                             return false;
                         }
-                        ctx.included_files.emplace_back(std::move(file_path), token.line);
+                        ctx.included_files.emplace_back(std::move(found_file_path), token.line);
                     }
                 }
             }
@@ -263,7 +263,7 @@ int main(int argc, char** argv) {
     };
 
     ctx.definitions = params.definitions;
-    full_text = processText(input_file_name, full_text, ctx, fn);
+    full_text = processText(input_file_path, full_text, ctx, fn);
 
     if (params.fix_file_ending) { full_text.push_back('\n'); }
 
@@ -276,12 +276,12 @@ int main(int argc, char** argv) {
         printDebug(1, "include: {}", file_path.generic_string());
     }
 
-    if (!output_file_name.empty() || full_text != src_full_text) {
-        if (output_file_name.empty()) { output_file_name = input_file_name; }
-        if (uxs::filebuf ofile(output_file_name.c_str(), "w"); ofile) {
+    if (!output_file_path.empty() || full_text != src_full_text) {
+        if (output_file_path.empty()) { output_file_path = input_file_path; }
+        if (uxs::filebuf ofile(output_file_path.c_str(), "w"); ofile) {
             ofile.write(full_text);
         } else {
-            printError("could not open output file `{}`", output_file_name);
+            printError("could not open output file `{}`", output_file_path);
             return -1;
         }
     }

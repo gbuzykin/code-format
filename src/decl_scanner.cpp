@@ -1,6 +1,7 @@
 #include "decl_scanner.h"
 
 #include <uxs/format.h>
+#include <uxs/format_fs.h>  //NOLINT
 
 #include <array>
 
@@ -256,6 +257,6 @@ void printDeclarationList(uxs::iobuf& out, const DeclList& lst) {
             default: break;
         }
         uxs::println(out, "{}{} file:{} line:{}", full_name, info.type == DeclType::kFunction ? "()" : "",
-                     info.file_name, info.line);
+                     info.file_path, info.line);
     }
 }

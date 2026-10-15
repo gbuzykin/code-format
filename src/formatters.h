@@ -2,7 +2,6 @@
 
 #include "parser.h"
 
-#include <filesystem>
 #include <functional>
 #include <set>
 
@@ -29,10 +28,10 @@ struct FormattingContext {
 
 using TokenFunc = std::function<bool(Parser&, const Parser::Token&, unsigned, std::string&)>;
 
-std::string processText(std::string file_name, std::span<const char> text, FormattingContext& ctx,
+std::string processText(std::filesystem::path file_path, std::span<const char> text, FormattingContext& ctx,
                         const TokenFunc& fn_token, TextProcFlags flags = TextProcFlags::kAtBegOfLine);
 
-std::pair<std::string, IncludeBrackets> extractIncludePath(std::string_view text);
+std::pair<std::filesystem::path, IncludeBrackets> extractIncludePath(std::string_view text);
 
 void skipLine(Parser& parser, const Parser::Token& first_tkn, std::string& output);
 void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingParameters& params, std::string& output);

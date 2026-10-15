@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
@@ -91,21 +92,22 @@ class Parser {
         }
     };
 
-    Parser(std::string file_name, std::span<const char> text, TextProcFlags flags = TextProcFlags::kAtBegOfLine)
-        : file_name_(std::move(file_name)) {
+    Parser(std::filesystem::path file_path, std::span<const char> text,
+           TextProcFlags flags = TextProcFlags::kAtBegOfLine)
+        : file_name_(std::move(file_path)) {
         first_ = text.data(), last_ = text.data() + text.size();
         revert_stack_.reserve(16);
         lex_state_stack_.reserve(256);
         lex_state_stack_.push_back(!!(flags & TextProcFlags::kAtBegOfLine) ? lex_detail::sc_at_beg_of_line :
                                                                              lex_detail::sc_initial);
     }
-    const std::string& getFileName() const { return file_name_; }
+    const std::filesystem::path& getFileName() const { return file_name_; }
     unsigned getLn() const { return line_; }
     Token parseNext();
     void revert(Token token) { revert_stack_.emplace_back(token); }
 
  private:
-    std::string file_name_;
+    std::filesystem::path file_name_;
     bool is_first_significant_token_ = true;
     unsigned line_ = 1, pos_ = 1;
     const char* first_ = nullptr;
