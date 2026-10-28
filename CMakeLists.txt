@@ -85,6 +85,7 @@ target_link_libraries(code-format PRIVATE UXS::UXS-static)
 
 install(TARGETS code-format RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                     COMPONENT binaries)
+install_win32_pdb(code-format)
 
 # ##############################################################################
 # Auxiliary
