@@ -4,6 +4,7 @@
 #include <uxs/format_fs.h>  //NOLINT
 
 #include <array>
+#include <iterator>
 
 namespace {
 Parser::Token getNextToken(Parser& parser, std::string& id) {
