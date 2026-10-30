@@ -4,7 +4,10 @@
 
 #include <uxs/cli/parser.h>
 #include <uxs/io/filebuf.h>
+#include <uxs/io/iostate.h>
+#include <uxs/iterator.h>
 
+#include <array>
 #include <exception>
 
 #define XSTR(s) STR(s)

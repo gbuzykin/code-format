@@ -2,6 +2,10 @@
 
 #include "print.h"
 
+#include <uxs/string_util.h>
+
+#include <array>
+
 std::string processText(std::filesystem::path file_path, std::span<const char> text, FormattingContext& ctx,
                         const TokenFunc& fn, TextProcFlags flags) {
     Parser parser(std::move(file_path), text, flags);

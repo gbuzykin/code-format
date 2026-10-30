@@ -1,7 +1,7 @@
 #pragma once
 
-#include <uxs/format.h>     // NOLINT
-#include <uxs/format_fs.h>  // NOLINT
+#include <uxs/format.h>
+#include <uxs/format_fs.h>  // IWYU pragma: keep
 #include <uxs/io/iobuf.h>
 
 #include <string>

@@ -1,9 +1,10 @@
 #include "decl_scanner.h"
 
 #include <uxs/format.h>
-#include <uxs/format_fs.h>  //NOLINT
+#include <uxs/format_fs.h>  // IWYU pragma: keep
 
 #include <array>
+#include <iterator>
 
 namespace {
 Parser::Token getNextToken(Parser& parser, std::string& id) {
