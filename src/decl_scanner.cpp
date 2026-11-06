@@ -10,7 +10,7 @@ namespace {
 Parser::Token getNextToken(Parser& parser, std::string& id) {
     bool id_started = false;
     while (true) {
-        auto tk = parser.parseNext();
+        const auto tk = parser.parseNext();
         if (tk.type >= Parser::TokenType::kPreprocId) { continue; }
         if (tk.type == Parser::TokenType::kNsSep || tk.type == Parser::TokenType::kIdentifier) {
             if (!id_started) {
@@ -19,12 +19,12 @@ Parser::Token getNextToken(Parser& parser, std::string& id) {
             }
             if (tk.type == Parser::TokenType::kIdentifier) {
                 id.append(tk.getTrimmedText());
-                auto tk2 = parser.parseNext();
+                const auto tk2 = parser.parseNext();
                 if (tk2.type == Parser::TokenType::kNsSep) {
                     id += '/';
                     continue;
                 }
-                parser.revert(std::move(tk2));
+                parser.revert(tk2);
             } else {
                 id += '/';
                 continue;
@@ -47,7 +47,7 @@ Namespace* Namespace::lookup(std::string_view name) {
     }
 
     while (found_ns) {
-        auto it = std::ranges::find_if(children, [subname](auto&& v) { return v->name == subname; });
+        const auto it = std::ranges::find_if(children, [subname](auto&& v) { return v->name == subname; });
         if (it != children.end()) { break; }
         found_ns = found_ns->parent;
     }
@@ -62,7 +62,7 @@ Namespace* Namespace::lookup(std::string_view name) {
             name.remove_prefix(pos + 1);
         }
 
-        auto it = std::ranges::find_if(found_ns->children, [subname](auto&& v) { return v->name == subname; });
+        const auto it = std::ranges::find_if(found_ns->children, [subname](auto&& v) { return v->name == subname; });
         if (it == found_ns->children.end()) { return nullptr; }
         found_ns = it->get();
     }
@@ -85,7 +85,7 @@ Namespace* Namespace::enter(std::string_view name, unsigned& pop_count) {
 
         ++pop_count;
 
-        auto it = std::ranges::find_if(ns->children, [name](auto&& v) { return v->name == name; });
+        const auto it = std::ranges::find_if(ns->children, [name](auto&& v) { return v->name == name; });
         if (it != ns->children.end()) { return it->get(); }
         ns = ns->children.emplace_back(std::make_unique<Namespace>(this, std::string(name))).get();
     } while (pos != std::string::npos);

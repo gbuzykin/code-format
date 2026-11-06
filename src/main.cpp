@@ -24,14 +24,14 @@ std::filesystem::path findIncludePath(const std::filesystem::path& path, Include
     }
     if (brackets == IncludeBrackets::kDoubleQuotes) {
         for (const auto& dir : est::make_reverse_range(ctx.path_stack)) {
-            auto path_cat = dir.parent_path() / path;
+            const auto path_cat = dir.parent_path() / path;
             if (std::filesystem::exists(path_cat)) {
                 return (std::filesystem::current_path() / path_cat).lexically_normal();
             }
         }
     }
     for (const auto& dir : params.include_dirs) {
-        auto path_cat = dir / path;
+        const auto path_cat = dir / path;
         if (std::filesystem::exists(path_cat)) {
             return (std::filesystem::current_path() / path_cat).lexically_normal();
         }
@@ -55,11 +55,11 @@ bool collectIndirectlyIncludedFiles(const std::filesystem::path& file_path, cons
     std::string text;
     if (!loadTextFile(ctx.path_stack.back(), text)) { return false; }
 
-    auto fn = [&params, &ctx](Parser& parser, const Parser::Token& token, unsigned skip_level, std::string&) {
+    const auto fn = [&params, &ctx](Parser& parser, const Parser::Token& token, unsigned skip_level, std::string&) {
         if (skip_level) { return false; }
 
         if (token.isPreprocIdentifier("pragma")) {
-            auto next = parser.parseNext();
+            const auto next = parser.parseNext();
             if (next.type == Parser::TokenType::kPreprocBody) {
                 if (next.getTrimmedText() == "once" && !ctx.once_included_files.emplace(ctx.path_stack.back()).second) {
                     return true;
@@ -71,10 +71,10 @@ bool collectIndirectlyIncludedFiles(const std::filesystem::path& file_path, cons
             return false;
         }
 
-        auto next = parser.parseNext();
+        const auto next = parser.parseNext();
         if (next.type == Parser::TokenType::kPreprocBody) {
-            auto [file_path, brackets] = extractIncludePath(next.getTrimmedText());
-            auto found_file_path = findIncludePath(file_path, brackets, params, ctx);
+            const auto [file_path, brackets] = extractIncludePath(next.getTrimmedText());
+            const auto found_file_path = findIncludePath(file_path, brackets, params, ctx);
             if (!found_file_path.empty()) {
                 if (brackets == IncludeBrackets::kDoubleQuotes) {
                     ctx.path_stack.emplace_back(found_file_path);
@@ -117,31 +117,34 @@ int main(int argc, char** argv) {
             return true;
         };
 
-        auto cli = uxs::cli::command(argv[0])
-                   << uxs::cli::overview("This is a tool to automate cosmetic fixes in C and C++ code")
-                   << uxs::cli::values("<files>", input_file_paths, string_to_path)
-                   << (uxs::cli::option({"-o"}) & uxs::cli::value("<file>", output_file_path, string_to_path)) %
-                          "Output file name."
-                   << uxs::cli::option({"--fix-file-ending"}).set(params.fix_file_ending) %
-                          "Change file ending to one new-line symbol."
-                   << uxs::cli::option({"--fix-single-statement"}).set(params.fix_single_statement) %
-                          "Enclose single-statement blocks in brackets,\n"
-                          "format `if`-`else if`-`else`-sequences."
-                   << uxs::cli::option({"--fix-id-naming"}).set(params.fix_id_naming) % "Fix identifier naming."
-                   << uxs::cli::option({"--fix-pragma-once"}).set(params.fix_pragma_once) %
-                          "Fix pragma once preproc command."
-                   << uxs::cli::option({"--remove-already-included"}).set(params.remove_already_included) %
-                          "Remove include directives for already included headers."
-                   << uxs::cli::option({"--list-all-declarations"}).set(params.list_all_declarations) %
-                          "List all file declarations."
-                   << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) % "Add definition."
-                   << (uxs::cli::option({"-I"}) & uxs::cli::values("<dirs>...", params.include_dirs, string_to_path)) %
-                          "Add include directory."
-                   << (uxs::cli::option({"-d"}) & uxs::cli::value("<debug level>", g_debug_level)) % "Debug level."
-                   << uxs::cli::option({"-h", "--help"}).set(show_help) % "Display this information."
-                   << uxs::cli::option({"-V", "--version"}).set(show_version) % "Display version.";
+        const auto cli = uxs::cli::command(argv[0])
+                         << uxs::cli::overview("This is a tool to automate cosmetic fixes in C and C++ code")
+                         << uxs::cli::values("<files>", input_file_paths, string_to_path)
+                         << (uxs::cli::option({"-o"}) & uxs::cli::value("<file>", output_file_path, string_to_path)) %
+                                "Output file name."
+                         << uxs::cli::option({"--fix-file-ending"}).set(params.fix_file_ending) %
+                                "Change file ending to one new-line symbol."
+                         << uxs::cli::option({"--fix-single-statement"}).set(params.fix_single_statement) %
+                                "Enclose single-statement blocks in brackets,\n"
+                                "format `if`-`else if`-`else`-sequences."
+                         << uxs::cli::option({"--fix-id-naming"}).set(params.fix_id_naming) % "Fix identifier naming."
+                         << uxs::cli::option({"--fix-pragma-once"}).set(params.fix_pragma_once) %
+                                "Fix pragma once preproc command."
+                         << uxs::cli::option({"--remove-already-included"}).set(params.remove_already_included) %
+                                "Remove include directives for already included headers."
+                         << uxs::cli::option({"--list-all-declarations"}).set(params.list_all_declarations) %
+                                "List all file declarations."
+                         << (uxs::cli::option({"-D"}) & uxs::cli::values("<defs>...", params.definitions)) %
+                                "Add definition."
+                         << (uxs::cli::option({"-I"}) &
+                             uxs::cli::values("<dirs>...", params.include_dirs, string_to_path)) %
+                                "Add include directory."
+                         << (uxs::cli::option({"-d"}) & uxs::cli::value("<debug level>", g_debug_level)) %
+                                "Debug level."
+                         << uxs::cli::option({"-h", "--help"}).set(show_help) % "Display this information."
+                         << uxs::cli::option({"-V", "--version"}).set(show_version) % "Display version.";
 
-        auto parse_result = cli->parse(argc, argv);
+        const auto parse_result = cli->parse(argc, argv);
         if (show_help) {
             uxs::stdbuf::out().write(parse_result.node->get_command()->make_man_page(uxs::cli::text_coloring::colored));
             return 0;
@@ -230,7 +233,8 @@ int main(int argc, char** argv) {
                 });
         }
 
-        auto fn = [&params, &ctx](Parser& parser, const Parser::Token& token, unsigned skip_level, std::string& output) {
+        const auto fn = [&params, &ctx](Parser& parser, const Parser::Token& token, unsigned skip_level,
+                                        std::string& output) {
             static constexpr std::array<std::string_view, 10> type_names = {
                 "kEof",     "kSymbol", "kNsSep",     "kIdentifier",  "kString",
                 "kInteger", "kReal",   "kPreprocId", "kPreprocBody", "kComment"};
@@ -246,13 +250,13 @@ int main(int argc, char** argv) {
             if (params.fix_single_statement && fixSingleStatement(parser, token, output)) { return false; }
 
             if (token.isPreprocIdentifier("include")) {
-                auto next = parser.parseNext();
+                const auto next = parser.parseNext();
                 if (next.type == Parser::TokenType::kPreprocBody) {
                     if (!skip_level) {
-                        auto [file_path, brackets] = extractIncludePath(next.getTrimmedText());
-                        auto found_file_path = findIncludePath(file_path, brackets, params, ctx);
+                        const auto [file_path, brackets] = extractIncludePath(next.getTrimmedText());
+                        const auto found_file_path = findIncludePath(file_path, brackets, params, ctx);
                         if (!found_file_path.empty()) {
-                            if (params.remove_already_included &&
+                            if (params.remove_already_included && !next.text.ends_with("keep") &&
                                 (std::ranges::any_of(
                                      ctx.included_files,
                                      [&found_file_path](auto&& v) { return v.first == found_file_path; }) ||

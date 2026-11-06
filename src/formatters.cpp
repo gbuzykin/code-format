@@ -22,7 +22,7 @@ std::string processText(std::filesystem::path file_path, std::span<const char> t
         if (!parser.getFileName().empty() && token.line == 1 && token.pos == 1) { token.trimEmptyLines(); }
         if (fn(parser, token, skip_level, output)) { return output; }
         if (token.type == Parser::TokenType::kPreprocId) {
-            auto id = token.getPreprocIdentifier();
+            const auto id = token.getPreprocIdentifier();
 
             token = parser.parseNext();
             if (token.type != Parser::TokenType::kPreprocBody || id != "define") { parser.revert(token); }
@@ -78,7 +78,7 @@ std::string decodeStringEscapes(std::string_view s, std::string_view symb, std::
         result += uxs::to_string_view(p0, p);
         p0 = p + 1;
         if (++p == s.end()) { break; }
-        auto pos = code.find(*p);
+        const auto pos = code.find(*p);
         if (pos != std::string_view::npos) {
             result += symb[pos];
             p0 = p + 1;
@@ -93,7 +93,7 @@ std::pair<std::filesystem::path, IncludeBrackets> extractIncludePath(std::string
     IncludeBrackets brackets = IncludeBrackets::kDoubleQuotes;
     if (text.front() == '<') {
         brackets = IncludeBrackets::kAngled;
-        auto pos = text.find('>');
+        const auto pos = text.find('>');
         if (pos == std::string::npos) { return {}; }
         text = text.substr(1, pos - 1);
     } else if (text.front() == '\"') {
@@ -134,7 +134,7 @@ void fixIdNaming(Parser& parser, const Parser::Token& token, const FormattingPar
     auto id = token.getTrimmedText();
     std::string new_id{id};
 
-    auto next = parser.parseNext();
+    const auto next = parser.parseNext();
     if (!next.isSymbol('(')) {
         if (id.size() > 1 &&
             (id[0] == '_' ||
@@ -178,14 +178,14 @@ bool fixPragmaOnce(Parser& parser, const Parser::Token& first_tkn, std::string& 
     bool is_header = ext.native().size() >= header_ext.size() &&
                      std::equal(ext.native().begin(), ext.native().begin() + header_ext.size(), header_ext.begin());
 
-    auto next = parser.parseNext();
+    const auto next = parser.parseNext();
 
     if (is_header && first_tkn.isFirstSignificant() && first_tkn.isPreprocIdentifier("ifndef") &&
         next.type == Parser::TokenType::kPreprocBody) {
-        auto defined = next.getFirstIdentifier();
+        const auto defined = next.getFirstIdentifier();
 
-        auto next2 = parser.parseNext();
-        auto next3 = parser.parseNext();
+        const auto next2 = parser.parseNext();
+        const auto next3 = parser.parseNext();
         parser.revert(next3);
         parser.revert(next2);
 

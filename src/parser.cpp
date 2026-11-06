@@ -24,7 +24,7 @@ std::size_t countWs(std::string_view text) {
 
 Parser::Token Parser::parseNext() {
     if (!revert_stack_.empty()) {
-        auto token = revert_stack_.back();
+        const auto token = revert_stack_.back();
         revert_stack_.pop_back();
         return token;
     }
@@ -100,8 +100,8 @@ std::string_view Parser::Token::getPreprocIdentifier() const {
 }
 
 std::string_view Parser::Token::getFirstIdentifier() const {
-    auto first = text.begin() + ws_count;
+    const auto first = text.begin() + ws_count;
     if (first == text.end() || (!uxs::is_alpha{}(*first) && *first != '_')) { return {}; }
-    auto last = std::find_if(first + 1, text.end(), [](char ch) { return !uxs::is_alnum{}(ch) && ch != '_'; });
+    const auto last = std::find_if(first + 1, text.end(), [](char ch) { return !uxs::is_alnum{}(ch) && ch != '_'; });
     return std::string_view(first, last);
 }
